@@ -7,7 +7,7 @@ This file is the tool-agnostic rule source for AI coding assistants in this repo
 - Core runtime modules are under `src/`.
 - Test files are under `tests/`.
 - Skill definitions are under `dev-skills/` (sourced from GitLab in production).
-- The system uses GitHub CLI (`gh`) as the auth bridge to call Copilot — no direct API key required.
+- The AI backend is the Nokia internal LLM API (`hzllmapi.dyn.nesc.nokia.net:8080/v1/chat/completions`), model `qwen/qwen3-32b`. No external API key required.
 - Long-term goal: evolve from CLI tool into a Web-based AI assistant with four core modules (see Architecture below).
 
 ## Architecture
@@ -35,16 +35,16 @@ The system is composed of four modules:
 - Module boundary: `src/executor.py`
 
 ### D. Environment & Auth Layer — "The Guard"
-- Auth Manager: verifies `gh auth status` before any AI call.
+- Auth Manager: verifies LLM API reachability before any AI call.
 - Access Control: restrict web UI to internal (Nokia SSO) users only when deployed.
-- No secrets hardcoded in source; credentials via environment variables or `gh` session.
+- No secrets hardcoded in source; API URL and model configurable via environment variables (`LLM_API_URL`, `LLM_MODEL`).
 
 ## Business Data Flow
 1. User selects a skill (e.g. "IMS2 call drop analysis") and uploads a log.
 2. Backend locates `dev-skills/analyze-ims2/SKILL.md` and reads its rules.
 3. Backend builds prompt: `"Based on rules: {SKILL_CONTENT}, analyze this log: {USER_LOG}"`.
-4. Backend runs: `gh copilot explain "<prompt>"` via subprocess.
-5. Result Extractor returns clean Markdown to frontend for rendering.
+4. Backend calls Nokia LLM API via `requests.post` with the prompt.
+5. Result Extractor reads `choices[0].message.content` and returns clean Markdown to frontend for rendering.
 
 ## Priorities
 - Keep behavior stable unless user explicitly asks for changes.

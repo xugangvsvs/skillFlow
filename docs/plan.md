@@ -7,7 +7,16 @@
 - Run regression testing on each push via CI and block merges on failures.
 
 ## North Star
-- Build a reliable workflow that maps user input to the correct skill and returns useful AI analysis output.
+- Build a reliable enterprise intranet AI assistant that maps user input to the correct skill and returns useful AI analysis.
+- Core idea: "GitLab provides the brain (Skills), Nokia internal LLM provides the intelligence, the Web app provides the face (UI)."
+- No external API key required: uses Nokia internal LLM API (`qwen/qwen3-32b`) on the intranet.
+- Zero-cost skill extension: adding a new folder with `SKILL.md` in GitLab instantly adds a new capability.
+
+## Target Architecture Modules
+- **A. Scout** (`src/scanner.py`): Skill discovery, YAML parsing, local cache.
+- **B. Face** (future `web/`): Skill explorer UI, auto-generated input forms, stream terminal.
+- **C. Brain** (`src/executor.py`): Prompt builder, HTTP call to Nokia LLM API (`qwen/qwen3-32b`), result extractor.
+- **D. Guard** (env/auth layer): LLM API reachability check, Nokia SSO for web access, no hardcoded secrets.
 
 ## Current Milestones
 
@@ -24,7 +33,7 @@
 ### M3. Test Coverage
 - [ ] Expand unit tests for skill matching edge cases.
 - [ ] Add tests for scanner parsing failures.
-- [ ] Add executor tests with mocked AI responses.
+- [x] Add executor tests with mocked AI responses.
 
 ### M4. CI and Regression Guardrails
 - [x] Add GitHub Actions workflow for pytest on push and pull_request.
