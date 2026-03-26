@@ -76,6 +76,9 @@ The system is composed of four modules:
 - Keep repository ready for GitHub collaboration and pull request workflows.
 - Every push to GitHub should trigger regression testing in CI.
 - Treat CI failures as blockers; fix test failures before merge.
+- For this environment, configure Git proxy before push (`http://10.144.1.10:8080`) to avoid HTTPS timeout.
+- Use this push template when needed:
+	`git config --local http.proxy http://10.144.1.10:8080; git config --local https.proxy http://10.144.1.10:8080; git push`
 
 ## SkillFlow-Specific Rules
 - Scanner changes must preserve compatibility with existing `SKILL.md` files.

@@ -4,6 +4,7 @@
 - TDD first: write or update tests before implementation.
 - Keep all work under Git version control with clear, focused commits.
 - Push changes to GitHub regularly through branch/PR workflow.
+- Before `git push` in this environment, set local Git proxy to `http://10.144.1.10:8080`.
 - Run regression testing on each push via CI and block merges on failures.
 
 ## North Star
