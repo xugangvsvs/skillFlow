@@ -23,6 +23,7 @@ class CopilotExecutor:
                 self.api_url,
                 json=payload,
                 headers={"Content-Type": "application/json"},
+                proxies={"http": "", "https": ""},  # bypass system proxy for intranet
                 timeout=60,
             )
             response.raise_for_status()
