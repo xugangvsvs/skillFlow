@@ -1,0 +1,13 @@
+---
+description: Project-wide engineering rules for SkillFlow
+globs: ["**/*"]
+alwaysApply: true
+---
+
+Use `AGENTS.md` in the repository root as the primary project rule source.
+
+Working defaults:
+- Keep edits small, safe, and easy to review.
+- Follow existing structure in `src/` and `tests/`.
+- Update tests when behavior changes.
+- Keep transient roadmap items in `docs/plan.md`.
