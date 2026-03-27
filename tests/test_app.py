@@ -1,5 +1,6 @@
 import pytest
 import json
+from unittest.mock import patch
 from src.app import create_app
 
 
@@ -28,15 +29,13 @@ def test_get_skills(client):
 
 def test_analyze_with_valid_skill(client):
     """Test POST /api/analyze with a valid skill and user input."""
-    payload = {
-        "skill_name": "analyze-ims2",
-        "user_input": "ims2"
-    }
-    response = client.post(
-        "/api/analyze",
-        data=json.dumps(payload),
-        content_type="application/json"
-    )
+    with patch("src.app.CopilotExecutor") as mock_executor_class:
+        mock_executor_class.return_value.ask_ai.return_value = "Mocked AI analysis result."
+        response = client.post(
+            "/api/analyze",
+            data=json.dumps({"skill_name": "analyze-ims2", "user_input": "ims2"}),
+            content_type="application/json"
+        )
     assert response.status_code == 200
     data = response.get_json()
     assert "result" in data
