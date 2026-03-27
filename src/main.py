@@ -3,8 +3,8 @@ from src.scanner import SkillScanner, match_skill
 from src.executor import CopilotExecutor
 
 def run_app():
-    # 路径根据你的项目结构调整
-    repo_path = "./dev-skills" 
+    # Adjust path based on project structure
+    repo_path = "./dev-skills"
     scanner = SkillScanner(repo_path)
     executor = CopilotExecutor()
 
@@ -13,32 +13,31 @@ def run_app():
     print("="*50)
     
     skills = scanner.scan()
-    print(f"[*] 系统状态: 已成功加载 {len(skills)} 个技能。")
+    print(f"[*] System status: Successfully loaded {len(skills)} skills.")
 
     while True:
         try:
-            user_input = input("\n[User] 输入 Log 或分析需求 (q 退出): ").strip()
+            user_input = input("\n[User] Enter log or analysis request (q to quit): ").strip()
             
             if user_input.lower() == 'q':
                 break
             if not user_input:
                 continue
 
-            # 匹配逻辑 (不区分大小写，搜索 name 和 description)
+            # Matching logic (case-insensitive, search in name and description)
             matched = match_skill(skills, user_input)
 
             if matched:
-                print(f"[*] 命中技能: [{matched['name']}]")
-                print(f"[*] 正在调用 Copilot 进行分析...")
+                print(f"[*] Matched skill: [{matched['name']}]")
+                print(f"[*] Calling Nokia LLM for analysis...")
                 
-                # 将匹配到的整个 SKILL.md 内容作为上下文发给 AI
-                # 这样 AI 就能根据你拷贝的那个 ims2 规范来回答
+                # Combine matched skill metadata with user input as context for AI
                 prompt = f"Using this skill spec:\n{matched}\n\nAnalyze this user query: {user_input}"
                 
                 response = executor.ask_ai(prompt)
-                print(f"\n[AI 分析建议]:\n{response}")
+                print(f"\n[AI Analysis Suggestion]:\n{response}")
             else:
-                print("[!] 未匹配到相关技能。您可以尝试输入关键词，如: ims2, SIP, 403")
+                print("[!] No matching skills found. Try keywords like: ims2, SIP, 403")
 
         except KeyboardInterrupt:
             break

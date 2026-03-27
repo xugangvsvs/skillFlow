@@ -21,25 +21,30 @@
 
 ## Current Milestones
 
-### M1. Core Stability
-- [ ] Verify scanner coverage for all folders under `dev-skills/`.
-- [ ] Validate matching quality for common telecom keywords.
-- [ ] Improve error messages for missing or malformed skill files.
+### Phase 1: Web Backend API Skeleton
+- [x] Create Flask app with `/api/skills` endpoint (GET)
+- [x] Create `/api/analyze` endpoint (POST) for synchronous AI calls
+- [x] Create `/api/analyze/stream` endpoint (POST) for SSE streaming (placeholder)
+- [ ] Write comprehensive unit tests for API endpoints
+- [ ] Test locally with curl or Postman
 
-### M2. Prompt and Execution Quality
-- [ ] Standardize prompt construction in executor.
-- [ ] Add guardrails for oversized skill context.
-- [ ] Improve user-facing analysis formatting.
+### Phase 2: Frontend (Vue 3 + Element Plus)
+- [ ] Initialize Vue 3 + Vite project
+- [ ] Skill Explorer: card list with search
+- [ ] Skill Detail: expand skill metadata
+- [ ] Auto-Form: simple text input + file upload
+- [ ] Stream Terminal: display AI response in real-time
 
-### M3. Test Coverage
-- [ ] Expand unit tests for skill matching edge cases.
-- [ ] Add tests for scanner parsing failures.
-- [x] Add executor tests with mocked AI responses.
+### Phase 3: Dynamic Forms (Future)
+- [ ] Extend SKILL.md with `inputs` field for parameter definitions
+- [ ] Auto-generate form fields based on inputs metadata
+- [ ] Support file upload, text, select types
 
-### M4. CI and Regression Guardrails
-- [x] Add GitHub Actions workflow for pytest on push and pull_request.
-- [x] Add a baseline regression test suite and keep it updated with bug fixes.
-- [ ] Define merge gate: CI must pass before merge.
+### Phase 4: Deployment & Polish
+- [ ] Docker containerization
+- [ ] HTTPS/TLS for production
+- [ ] Authentication & SSO (future)
+- [ ] Logging & monitoring
 
 ## Backlog
 - [ ] Add config file for repo path and runtime options.

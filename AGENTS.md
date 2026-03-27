@@ -79,6 +79,8 @@ The system is composed of four modules:
 - For this environment, configure Git proxy before push (`http://10.144.1.10:8080`) to avoid HTTPS timeout.
 - Use this push template when needed:
 	`git config --local http.proxy http://10.144.1.10:8080; git config --local https.proxy http://10.144.1.10:8080; git push`
+- For this environment, always install Python packages via corporate proxy:
+  `pip install <package> --proxy http://10.144.1.10:8080`
 
 ## SkillFlow-Specific Rules
 - Scanner changes must preserve compatibility with existing `SKILL.md` files.
