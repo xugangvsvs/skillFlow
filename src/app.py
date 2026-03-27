@@ -1,6 +1,13 @@
 from flask import Flask, jsonify, request, Response
-from src.scanner import SkillScanner
-from src.executor import CopilotExecutor
+try:
+    from src.scanner import SkillScanner
+    from src.executor import CopilotExecutor
+except ModuleNotFoundError:
+    # Allow running directly as 'python src/app.py' from project root
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from src.scanner import SkillScanner
+    from src.executor import CopilotExecutor
 import json
 
 
@@ -136,5 +143,9 @@ def create_app(skill_path: str = "./dev-skills") -> Flask:
 
 
 if __name__ == "__main__":
+    import sys
+    import os
+    # Ensure project root is in sys.path when run directly as 'python src/app.py'
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     app = create_app()
     app.run(debug=True, host="0.0.0.0", port=5000)
