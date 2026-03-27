@@ -1,4 +1,5 @@
-from flask import Flask, jsonify, request, Response
+from flask import Flask, jsonify, request, Response, send_from_directory
+from pathlib import Path
 try:
     from src.scanner import SkillScanner
     from src.executor import CopilotExecutor
@@ -21,7 +22,9 @@ def create_app(skill_path: str = "./dev-skills") -> Flask:
     Returns:
         Configured Flask app instance.
     """
-    app = Flask(__name__)
+    project_root = Path(__file__).resolve().parent.parent
+    web_root = project_root / "web"
+    app = Flask(__name__, static_folder=str(web_root), static_url_path="/web")
     
     # Initialize scanner and executor at app startup
     scanner = SkillScanner(skill_path)
@@ -53,6 +56,11 @@ def create_app(skill_path: str = "./dev-skills") -> Flask:
             for s in skills
         ]
         return jsonify(skill_list), 200
+
+    @app.route("/", methods=["GET"])
+    def web_home():
+        """Serve the web UI home page for Phase 2 (Option B)."""
+        return send_from_directory(str(web_root), "index.html")
     
     @app.route("/api/analyze", methods=["POST"])
     def analyze():

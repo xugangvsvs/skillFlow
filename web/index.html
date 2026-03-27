@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SkillFlow Web Assistant</title>
+  <style>
+    :root {
+      --bg: #f3f6f1;
+      --panel: #fffdf7;
+      --ink: #1b1f18;
+      --muted: #52604f;
+      --line: #d8e0d2;
+      --accent: #1f7a4c;
+      --accent-ink: #ecfff4;
+      --terminal-bg: #111611;
+      --terminal-ink: #c4ffd6;
+      --warn: #a33a2f;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Noto Sans", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 12% 15%, #d2e7d5 0%, transparent 26%),
+        radial-gradient(circle at 88% 10%, #f5e5bf 0%, transparent 30%),
+        linear-gradient(160deg, #eef4eb 0%, #f9f6ec 100%);
+      min-height: 100vh;
+    }
+
+    .shell {
+      width: min(1200px, 96vw);
+      margin: 20px auto;
+      display: grid;
+      gap: 14px;
+      grid-template-columns: 320px 1fr;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 8px 24px rgba(40, 54, 35, 0.08);
+      overflow: hidden;
+    }
+
+    .card h2 {
+      margin: 0;
+      padding: 14px 16px;
+      font-size: 18px;
+      background: linear-gradient(90deg, #eef7ee, #fef7df);
+      border-bottom: 1px solid var(--line);
+    }
+
+    #skill-list {
+      list-style: none;
+      margin: 0;
+      padding: 8px;
+      max-height: 70vh;
+      overflow: auto;
+    }
+
+    .skill-item {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      margin: 8px 0;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: #fff;
+    }
+
+    .skill-item:hover,
+    .skill-item.active {
+      border-color: var(--accent);
+      background: #f1fff5;
+    }
+
+    .skill-item small {
+      color: var(--muted);
+      display: block;
+      margin-top: 6px;
+      line-height: 1.35;
+    }
+
+    .main {
+      display: grid;
+      gap: 14px;
+      grid-template-rows: auto 1fr;
+    }
+
+    .toolbar {
+      padding: 16px;
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 1fr;
+    }
+
+    .toolbar p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    #analysis-input {
+      width: 100%;
+      min-height: 140px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      font: inherit;
+      background: #fff;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: var(--accent);
+      color: var(--accent-ink);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .note {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    #terminal-output {
+      margin: 0;
+      padding: 16px;
+      min-height: 320px;
+      max-height: 56vh;
+      overflow: auto;
+      white-space: pre-wrap;
+      font: 14px/1.45 "Consolas", "Courier New", monospace;
+      color: var(--terminal-ink);
+      background: linear-gradient(180deg, #0e170f 0%, #121b13 100%);
+    }
+
+    .error { color: #ffc2b6; }
+
+    @media (max-width: 960px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      #skill-list {
+        max-height: 240px;
+      }
+
+      #terminal-output {
+        max-height: 320px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app" class="shell">
+    <section class="card">
+      <h2>SkillFlow Web Assistant</h2>
+      <ul id="skill-list">
+        <li class="note">Loading skills...</li>
+      </ul>
+    </section>
+
+    <section class="main">
+      <div class="card toolbar">
+        <p id="selected-skill">Selected skill: none</p>
+        <textarea id="analysis-input" placeholder="Enter logs or analysis request..."></textarea>
+        <div class="actions">
+          <button id="analyze-btn" type="button">Analyze</button>
+          <span class="note" id="status-text">Idle</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Stream Terminal</h2>
+        <pre id="terminal-output">[System] Ready. Select a skill and submit a request.</pre>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      const skillListEl = document.getElementById("skill-list");
+      const selectedSkillEl = document.getElementById("selected-skill");
+      const analysisInputEl = document.getElementById("analysis-input");
+      const analyzeBtnEl = document.getElementById("analyze-btn");
+      const statusTextEl = document.getElementById("status-text");
+      const terminalEl = document.getElementById("terminal-output");
+
+      let selectedSkillName = "";
+
+      function appendTerminal(text, isError) {
+        const line = isError ? "[Error] " + text : text;
+        terminalEl.textContent += "\n" + line;
+        terminalEl.scrollTop = terminalEl.scrollHeight;
+      }
+
+      function setBusy(isBusy) {
+        analyzeBtnEl.disabled = isBusy;
+        statusTextEl.textContent = isBusy ? "Analyzing..." : "Idle";
+      }
+
+      function renderSkills(skills) {
+        skillListEl.innerHTML = "";
+        skills.forEach((skill, index) => {
+          const li = document.createElement("li");
+          li.className = "skill-item";
+          li.innerHTML = "<strong>" + (skill.name || "(unnamed)") + "</strong>" +
+            "<small>" + (skill.description || "No description") + "</small>";
+          li.addEventListener("click", function () {
+            Array.from(skillListEl.children).forEach(el => el.classList.remove("active"));
+            li.classList.add("active");
+            selectedSkillName = skill.name || "";
+            selectedSkillEl.textContent = "Selected skill: " + selectedSkillName;
+          });
+          if (index === 0 && skill.name) {
+            li.classList.add("active");
+            selectedSkillName = skill.name;
+            selectedSkillEl.textContent = "Selected skill: " + selectedSkillName;
+          }
+          skillListEl.appendChild(li);
+        });
+      }
+
+      async function loadSkills() {
+        try {
+          const response = await fetch("/api/skills");
+          const data = await response.json();
+          if (!Array.isArray(data) || data.length === 0) {
+            skillListEl.innerHTML = "<li class='note'>No skills found.</li>";
+            return;
+          }
+          renderSkills(data);
+        } catch (error) {
+          skillListEl.innerHTML = "<li class='note'>Failed to load skills.</li>";
+          appendTerminal("Failed to load skills: " + error.message, true);
+        }
+      }
+
+      async function analyze() {
+        const userInput = analysisInputEl.value.trim();
+        if (!selectedSkillName) {
+          appendTerminal("Please select a skill first.", true);
+          return;
+        }
+        if (!userInput) {
+          appendTerminal("Please enter analysis input.", true);
+          return;
+        }
+
+        setBusy(true);
+        appendTerminal("[System] Submitting request for skill: " + selectedSkillName);
+
+        try {
+          const response = await fetch("/api/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              skill_name: selectedSkillName,
+              user_input: userInput
+            })
+          });
+
+          const data = await response.json();
+          if (!response.ok) {
+            appendTerminal(data.error || "Request failed", true);
+          } else {
+            appendTerminal("[AI] " + (data.result || "(empty response)"));
+          }
+        } catch (error) {
+          appendTerminal("Network error: " + error.message, true);
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      analyzeBtnEl.addEventListener("click", analyze);
+      loadSkills();
+    })();
+  </script>
+</body>
+</html>

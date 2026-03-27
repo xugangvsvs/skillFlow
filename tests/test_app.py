@@ -65,3 +65,21 @@ def test_analyze_missing_payload(client):
         content_type="application/json"
     )
     assert response.status_code == 400
+
+
+def test_web_home_page_available(client):
+    """Test that web home page route is available and returns HTML."""
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.content_type
+
+
+def test_web_home_page_contains_core_sections(client):
+    """Test that web home page includes core UI sections for Phase 2."""
+    response = client.get("/")
+    html = response.get_data(as_text=True)
+
+    assert "SkillFlow Web Assistant" in html
+    assert "id=\"skill-list\"" in html
+    assert "id=\"analysis-input\"" in html
+    assert "id=\"terminal-output\"" in html

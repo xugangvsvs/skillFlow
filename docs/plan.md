@@ -29,11 +29,12 @@
 - [ ] Test locally with curl or Postman
 
 ### Phase 2: Frontend (Vue 3 + Element Plus)
-- [ ] Initialize Vue 3 + Vite project
-- [ ] Skill Explorer: card list with search
-- [ ] Skill Detail: expand skill metadata
-- [ ] Auto-Form: simple text input + file upload
-- [ ] Stream Terminal: display AI response in real-time
+- [x] Option B kickoff: Flask-served web entry page (`web/index.html`)
+- [x] Skill Explorer: card list with click-to-select
+- [x] Skill Detail: selected skill indicator
+- [x] Auto-Form (MVP): text input + Analyze button
+- [x] Stream Terminal (MVP): response panel with incremental logs
+- [ ] Optional migration: Vue 3 + Vite frontend split (later)
 
 ### Phase 3: Dynamic Forms (Future)
 - [ ] Extend SKILL.md with `inputs` field for parameter definitions
