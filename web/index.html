@@ -63,6 +63,16 @@
       overflow: auto;
     }
 
+    #skill-search {
+      width: calc(100% - 16px);
+      margin: 10px 8px 2px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: inherit;
+      background: #fff;
+    }
+
     .skill-item {
       border: 1px solid var(--line);
       border-radius: 10px;
@@ -113,6 +123,14 @@
       border-radius: 10px;
       padding: 12px;
       font: inherit;
+      background: #fff;
+    }
+
+    #log-file {
+      width: 100%;
+      border: 1px dashed var(--line);
+      border-radius: 10px;
+      padding: 10px;
       background: #fff;
     }
 
@@ -176,6 +194,7 @@
   <div id="app" class="shell">
     <section class="card">
       <h2>SkillFlow Web Assistant</h2>
+      <input id="skill-search" type="text" placeholder="Search skills...">
       <ul id="skill-list">
         <li class="note">Loading skills...</li>
       </ul>
@@ -185,6 +204,7 @@
       <div class="card toolbar">
         <p id="selected-skill">Selected skill: none</p>
         <textarea id="analysis-input" placeholder="Enter logs or analysis request..."></textarea>
+        <input id="log-file" type="file" accept=".log,.txt,.md,.json,.xml,.csv">
         <div class="actions">
           <button id="analyze-btn" type="button">Analyze</button>
           <span class="note" id="status-text">Idle</span>
@@ -202,12 +222,15 @@
     (function () {
       const skillListEl = document.getElementById("skill-list");
       const selectedSkillEl = document.getElementById("selected-skill");
+      const skillSearchEl = document.getElementById("skill-search");
       const analysisInputEl = document.getElementById("analysis-input");
+      const logFileEl = document.getElementById("log-file");
       const analyzeBtnEl = document.getElementById("analyze-btn");
       const statusTextEl = document.getElementById("status-text");
       const terminalEl = document.getElementById("terminal-output");
 
       let selectedSkillName = "";
+      let allSkills = [];
 
       function appendTerminal(text, isError) {
         const line = isError ? "[Error] " + text : text;
@@ -222,6 +245,10 @@
 
       function renderSkills(skills) {
         skillListEl.innerHTML = "";
+        if (!skills.length) {
+          skillListEl.innerHTML = "<li class='note'>No matching skills.</li>";
+          return;
+        }
         skills.forEach((skill, index) => {
           const li = document.createElement("li");
           li.className = "skill-item";
@@ -233,13 +260,27 @@
             selectedSkillName = skill.name || "";
             selectedSkillEl.textContent = "Selected skill: " + selectedSkillName;
           });
-          if (index === 0 && skill.name) {
+          if (index === 0 && skill.name && !selectedSkillName) {
             li.classList.add("active");
             selectedSkillName = skill.name;
             selectedSkillEl.textContent = "Selected skill: " + selectedSkillName;
           }
           skillListEl.appendChild(li);
         });
+      }
+
+      function filterSkills() {
+        const keyword = skillSearchEl.value.trim().toLowerCase();
+        if (!keyword) {
+          renderSkills(allSkills);
+          return;
+        }
+        const filtered = allSkills.filter(skill => {
+          const name = (skill.name || "").toLowerCase();
+          const desc = (skill.description || "").toLowerCase();
+          return name.includes(keyword) || desc.includes(keyword);
+        });
+        renderSkills(filtered);
       }
 
       async function loadSkills() {
@@ -250,7 +291,9 @@
             skillListEl.innerHTML = "<li class='note'>No skills found.</li>";
             return;
           }
-          renderSkills(data);
+          allSkills = data;
+          selectedSkillName = "";
+          renderSkills(allSkills);
         } catch (error) {
           skillListEl.innerHTML = "<li class='note'>Failed to load skills.</li>";
           appendTerminal("Failed to load skills: " + error.message, true);
@@ -271,14 +314,22 @@
         setBusy(true);
         appendTerminal("[System] Submitting request for skill: " + selectedSkillName);
 
+        const selectedFile = logFileEl.files && logFileEl.files.length ? logFileEl.files[0] : null;
+        if (selectedFile) {
+          appendTerminal("[System] Attached log file: " + selectedFile.name);
+        }
+
         try {
+          const formData = new FormData();
+          formData.append("skill_name", selectedSkillName);
+          formData.append("user_input", userInput);
+          if (selectedFile) {
+            formData.append("log_file", selectedFile);
+          }
+
           const response = await fetch("/api/analyze", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              skill_name: selectedSkillName,
-              user_input: userInput
-            })
+            body: formData
           });
 
           const data = await response.json();
@@ -295,6 +346,7 @@
       }
 
       analyzeBtnEl.addEventListener("click", analyze);
+      skillSearchEl.addEventListener("input", filterSkills);
       loadSkills();
     })();
   </script>

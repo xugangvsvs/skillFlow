@@ -31,8 +31,9 @@
 ### Phase 2: Frontend (Vue 3 + Element Plus)
 - [x] Option B kickoff: Flask-served web entry page (`web/index.html`)
 - [x] Skill Explorer: card list with click-to-select
+- [x] Skill Explorer: keyword search filter
 - [x] Skill Detail: selected skill indicator
-- [x] Auto-Form (MVP): text input + Analyze button
+- [x] Auto-Form (MVP): text input + optional log file upload + Analyze button
 - [x] Stream Terminal (MVP): response panel with incremental logs
 - [ ] Optional migration: Vue 3 + Vite frontend split (later)
 

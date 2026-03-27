@@ -38,6 +38,31 @@ def create_app(skill_path: str = "./dev-skills") -> Flask:
             if skill.get("name") == name:
                 return skill
         return None
+
+    def parse_analyze_request():
+        """Parse analyze payload from JSON or multipart form data."""
+        skill_name = ""
+        user_input = ""
+        uploaded_log_text = ""
+
+        if request.is_json:
+            data = request.get_json(silent=True) or {}
+            skill_name = (data.get("skill_name") or "").strip()
+            user_input = (data.get("user_input") or "").strip()
+            return skill_name, user_input, uploaded_log_text, None
+
+        # Support multipart/form-data for file upload use cases.
+        skill_name = (request.form.get("skill_name") or "").strip()
+        user_input = (request.form.get("user_input") or "").strip()
+        uploaded_file = request.files.get("log_file")
+
+        if uploaded_file and uploaded_file.filename:
+            raw_bytes = uploaded_file.read()
+            if not raw_bytes:
+                return skill_name, user_input, uploaded_log_text, "Uploaded log file is empty"
+            uploaded_log_text = raw_bytes.decode("utf-8", errors="replace")
+
+        return skill_name, user_input, uploaded_log_text, None
     
     @app.route("/api/skills", methods=["GET"])
     def get_skills():
@@ -76,15 +101,11 @@ def create_app(skill_path: str = "./dev-skills") -> Flask:
         Returns:
             JSON with analysis result or error message.
         """
-        data = request.get_json()
-        
-        # Validate payload
-        if not data:
-            return jsonify({"error": "Missing JSON payload"}), 400
-        
-        skill_name = data.get("skill_name")
-        user_input = data.get("user_input")
-        
+        skill_name, user_input, uploaded_log_text, request_error = parse_analyze_request()
+
+        if request_error:
+            return jsonify({"error": request_error}), 400
+
         if not skill_name or not user_input:
             return jsonify({"error": "Missing required fields: skill_name, user_input"}), 400
         
@@ -96,6 +117,9 @@ def create_app(skill_path: str = "./dev-skills") -> Flask:
         # Build prompt: combine skill metadata with user input
         skill_content = skill.get("full_content", "")
         prompt = f"Using this skill spec:\n{skill_content}\n\nAnalyze this user query: {user_input}"
+
+        if uploaded_log_text:
+            prompt += f"\n\nAttached log content:\n{uploaded_log_text}"
         
         # Call LLM executor
         result = executor.ask_ai(prompt)
@@ -117,14 +141,11 @@ def create_app(skill_path: str = "./dev-skills") -> Flask:
         Returns:
             Streamed response chunks as SSE.
         """
-        data = request.get_json()
-        
-        if not data:
-            return jsonify({"error": "Missing JSON payload"}), 400
-        
-        skill_name = data.get("skill_name")
-        user_input = data.get("user_input")
-        
+        skill_name, user_input, uploaded_log_text, request_error = parse_analyze_request()
+
+        if request_error:
+            return jsonify({"error": request_error}), 400
+
         if not skill_name or not user_input:
             return jsonify({"error": "Missing required fields: skill_name, user_input"}), 400
         
@@ -135,6 +156,8 @@ def create_app(skill_path: str = "./dev-skills") -> Flask:
         # Build prompt
         skill_content = skill.get("full_content", "")
         prompt = f"Using this skill spec:\n{skill_content}\n\nAnalyze this user query: {user_input}"
+        if uploaded_log_text:
+            prompt += f"\n\nAttached log content:\n{uploaded_log_text}"
         
         # Call LLM executor
         # Note: For now, we'll return the full result in chunks

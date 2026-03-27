@@ -1,5 +1,6 @@
 import pytest
 import json
+import io
 from unittest.mock import patch
 from src.app import create_app
 
@@ -83,3 +84,46 @@ def test_web_home_page_contains_core_sections(client):
     assert "id=\"skill-list\"" in html
     assert "id=\"analysis-input\"" in html
     assert "id=\"terminal-output\"" in html
+
+
+def test_web_home_page_contains_search_and_file_upload(client):
+    """Test that web home page includes phase-2 controls: search and file upload."""
+    response = client.get("/")
+    html = response.get_data(as_text=True)
+
+    assert "id=\"skill-search\"" in html
+    assert "id=\"log-file\"" in html
+
+
+def test_analyze_accepts_multipart_with_uploaded_file(client):
+    """Test POST /api/analyze accepts multipart form data with a log file."""
+    with patch("src.app.CopilotExecutor.ask_ai", return_value="Mocked multipart analysis"):
+        response = client.post(
+            "/api/analyze",
+            data={
+                "skill_name": "analyze-ims2",
+                "user_input": "check call flow",
+                "log_file": (io.BytesIO(b"line1\nline2"), "sample.log"),
+            },
+            content_type="multipart/form-data",
+        )
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["result"] == "Mocked multipart analysis"
+
+
+def test_analyze_rejects_empty_uploaded_file(client):
+    """Test POST /api/analyze rejects an empty uploaded file."""
+    response = client.post(
+        "/api/analyze",
+        data={
+            "skill_name": "analyze-ims2",
+            "user_input": "check call flow",
+            "log_file": (io.BytesIO(b""), "empty.log"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert "error" in response.get_json()
