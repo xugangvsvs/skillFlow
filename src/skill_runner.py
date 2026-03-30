@@ -127,10 +127,10 @@ class SkillRunner:
         """
         adapter = self.get_adapter(skill_name)
         if not adapter:
-            return {"mode": "fallback", "tool_output": "", "note": "No adapter configured"}
+            return {"mode": "fallback", "reason": "no_adapter", "tool_output": "", "note": "No adapter configured"}
 
         if adapter.get("execution_mode") != "tool-first":
-            return {"mode": "fallback", "tool_output": "", "note": "Adapter mode is not tool-first"}
+            return {"mode": "fallback", "reason": "not_tool_first", "tool_output": "", "note": "Adapter mode is not tool-first"}
 
         tool_cfg = adapter.get("tool") or {}
         command = self._resolve_tool_command(tool_cfg)
@@ -140,12 +140,13 @@ class SkillRunner:
         if not command:
             return {
                 "mode": "fallback",
+                "reason": "command_not_found",
                 "tool_output": "",
                 "note": "Tool command could not be resolved (check adapter command_candidates, IMS2_TOOL_PATH, IMS2_BIN_DIR, or PATH)",
             }
 
         if not file_bytes:
-            return {"mode": "fallback", "tool_output": "", "note": "No uploaded file provided for tool-first mode"}
+            return {"mode": "fallback", "reason": "no_file", "tool_output": "", "note": "No uploaded file provided for tool-first mode"}
 
         suffix = os.path.splitext(file_name)[1] if file_name else ".log"
         tmp_file = None
@@ -172,17 +173,18 @@ class SkillRunner:
 
             if completed.returncode != 0:
                 note = completed.stderr.strip() or f"Tool exited with code {completed.returncode}"
-                return {"mode": "fallback", "tool_output": "", "note": note}
+                return {"mode": "fallback", "reason": "tool_error", "tool_output": "", "note": note}
 
             return {
                 "mode": "tool-first",
+                "reason": "tool_success",
                 "tool_output": completed.stdout.strip(),
                 "note": f"Tool '{command}' executed successfully",
             }
         except subprocess.TimeoutExpired:
-            return {"mode": "fallback", "tool_output": "", "note": "Tool execution timed out"}
+            return {"mode": "fallback", "reason": "tool_timeout", "tool_output": "", "note": "Tool execution timed out"}
         except Exception as exc:
-            return {"mode": "fallback", "tool_output": "", "note": f"Tool execution error: {exc}"}
+            return {"mode": "fallback", "reason": "tool_error", "tool_output": "", "note": f"Tool execution error: {exc}"}
         finally:
             if tmp_file is not None:
                 try:

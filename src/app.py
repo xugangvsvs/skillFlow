@@ -62,6 +62,37 @@ def create_app(
                 return skill
         return None
 
+    def build_prompt(
+        skill_content: str,
+        user_input: str,
+        tool_run: dict,
+        uploaded_log_text: str,
+    ) -> str:
+        """Build the LLM prompt based on tool execution outcome.
+
+        When the external tool crashed or could not be found, binary file content
+        is NOT included — sending unreadable bytes causes the LLM to hallucinate.
+        Instead, the tool error is embedded and LLM is instructed not to fabricate.
+        """
+        prompt = f"Using this skill spec:\n{skill_content}\n\nAnalyze this user query: {user_input}"
+        reason = tool_run.get("reason", "")
+
+        if tool_run["mode"] == "tool-first":
+            prompt += f"\n\nTool output (tool-first mode):\n{tool_run['tool_output']}"
+        elif reason in ("tool_error", "command_not_found", "tool_timeout"):
+            # Tool was attempted but failed — binary file content is not useful to LLM.
+            prompt += (
+                f"\n\n[NOTE: The external analysis tool failed with the following error:\n"
+                f"{tool_run['note']}\n"
+                f"The uploaded file is a binary format that cannot be read as plain text. "
+                f"Do NOT fabricate specific values, object names, paths, or measurements. "
+                f"Instead, explain what this error means and suggest concrete steps to resolve it.]"
+            )
+        elif uploaded_log_text:
+            prompt += f"\n\nAttached log content:\n{uploaded_log_text}"
+
+        return prompt
+
     def parse_analyze_request():
         """Parse analyze payload from JSON or multipart form data."""
         skill_name = ""
@@ -173,7 +204,6 @@ def create_app(
         
         # Build prompt: combine skill metadata with user input
         skill_content = skill.get("full_content", "")
-        prompt = f"Using this skill spec:\n{skill_content}\n\nAnalyze this user query: {user_input}"
 
         tool_run = skill_runner.run_tool_if_configured(
             skill_name=skill_name,
@@ -181,10 +211,7 @@ def create_app(
             file_bytes=uploaded_file_bytes,
         )
 
-        if tool_run["mode"] == "tool-first":
-            prompt += f"\n\nTool output (tool-first mode):\n{tool_run['tool_output']}"
-        elif uploaded_log_text:
-            prompt += f"\n\nAttached log content:\n{uploaded_log_text}"
+        prompt = build_prompt(skill_content, user_input, tool_run, uploaded_log_text)
 
         # Call LLM executor
         result = executor.ask_ai(prompt)
@@ -233,7 +260,6 @@ def create_app(
         
         # Build prompt
         skill_content = skill.get("full_content", "")
-        prompt = f"Using this skill spec:\n{skill_content}\n\nAnalyze this user query: {user_input}"
 
         tool_run = skill_runner.run_tool_if_configured(
             skill_name=skill_name,
@@ -241,10 +267,7 @@ def create_app(
             file_bytes=uploaded_file_bytes,
         )
 
-        if tool_run["mode"] == "tool-first":
-            prompt += f"\n\nTool output (tool-first mode):\n{tool_run['tool_output']}"
-        elif uploaded_log_text:
-            prompt += f"\n\nAttached log content:\n{uploaded_log_text}"
+        prompt = build_prompt(skill_content, user_input, tool_run, uploaded_log_text)
         
         # Call LLM executor
         # Note: For now, we'll return the full result in chunks

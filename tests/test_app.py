@@ -171,6 +171,37 @@ def test_analyze_rejects_empty_uploaded_file(client):
     assert "error" in response.get_json()
 
 
+def test_analyze_tool_error_excludes_binary_content_and_warns_llm(client):
+    """When tool-first fails (tool_error reason), binary file content must NOT be included
+    in the LLM prompt, and the prompt must explicitly warn against fabricating data."""
+    with patch("src.app.CopilotExecutor.ask_ai", return_value="Error explanation") as mock_ask_ai, \
+         patch("src.app.SkillRunner.run_tool_if_configured", return_value={
+             "mode": "fallback",
+             "reason": "tool_error",
+             "tool_output": "",
+             "note": "thread 'main' panicked at 'assertion failed'",
+         }):
+        response = client.post(
+            "/api/analyze",
+            data={
+                "skill_name": "analyze-ims2",
+                "user_input": "analyze this",
+                "log_file": (io.BytesIO(b"\x00\x01\x02binary content"), "snapshot.ims2"),
+            },
+            content_type="multipart/form-data",
+        )
+
+    assert response.status_code == 200
+    sent_prompt = mock_ask_ai.call_args[0][0]
+    # Must include the tool error
+    assert "panicked" in sent_prompt
+    # Must warn LLM not to fabricate
+    assert "Do NOT fabricate" in sent_prompt
+    # Must NOT include raw binary file content
+    assert "Attached log content" not in sent_prompt
+    assert "binary content" not in sent_prompt
+
+
 def test_analyze_truncates_huge_uploaded_log_in_fallback_prompt(client):
     """Huge uploaded logs should be truncated in fallback prompt path to avoid oversized LLM payloads."""
     huge_text = ("X" * 350000).encode("utf-8")
