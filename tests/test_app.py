@@ -30,8 +30,13 @@ def test_get_skills(client):
 
 def test_analyze_with_valid_skill(client):
     """Test POST /api/analyze with a valid skill and user input."""
-    with patch("src.app.CopilotExecutor") as mock_executor_class:
+    with patch("src.app.CopilotExecutor") as mock_executor_class, patch("src.app.SkillRunner.run_tool_if_configured") as mock_run:
         mock_executor_class.return_value.ask_ai.return_value = "Mocked AI analysis result."
+        mock_run.return_value = {
+            "mode": "fallback",
+            "tool_output": "",
+            "note": "No adapter configured",
+        }
         response = client.post(
             "/api/analyze",
             data=json.dumps({"skill_name": "analyze-ims2", "user_input": "ims2"}),
@@ -40,6 +45,8 @@ def test_analyze_with_valid_skill(client):
     assert response.status_code == 200
     data = response.get_json()
     assert "result" in data
+    assert "mode" in data
+    assert "execution_note" in data
 
 
 def test_analyze_with_invalid_skill(client):
@@ -97,7 +104,12 @@ def test_web_home_page_contains_search_and_file_upload(client):
 
 def test_analyze_accepts_multipart_with_uploaded_file(client):
     """Test POST /api/analyze accepts multipart form data with a log file."""
-    with patch("src.app.CopilotExecutor.ask_ai", return_value="Mocked multipart analysis"):
+    with patch("src.app.CopilotExecutor.ask_ai", return_value="Mocked multipart analysis") as mock_ask_ai, \
+         patch("src.app.SkillRunner.run_tool_if_configured", return_value={
+             "mode": "fallback",
+             "tool_output": "",
+             "note": "No adapter configured",
+         }):
         response = client.post(
             "/api/analyze",
             data={
@@ -111,6 +123,36 @@ def test_analyze_accepts_multipart_with_uploaded_file(client):
     assert response.status_code == 200
     data = response.get_json()
     assert data["result"] == "Mocked multipart analysis"
+    sent_prompt = mock_ask_ai.call_args[0][0]
+    assert "Attached log content" in sent_prompt
+
+
+def test_analyze_uses_tool_output_when_tool_first_mode(client):
+    """Test analyze endpoint uses tool output when adapter runner returns tool-first mode."""
+    with patch("src.app.CopilotExecutor.ask_ai", return_value="Tool-first summary") as mock_ask_ai, \
+         patch("src.app.SkillRunner.run_tool_if_configured", return_value={
+             "mode": "tool-first",
+             "tool_output": "parsed object count: 42",
+             "note": "Tool executed",
+         }):
+        response = client.post(
+            "/api/analyze",
+            data={
+                "skill_name": "analyze-ims2",
+                "user_input": "inspect snapshot",
+                "log_file": (io.BytesIO(b"raw ims2 binary-like content"), "sample.ims2"),
+            },
+            content_type="multipart/form-data",
+        )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["mode"] == "tool-first"
+    assert payload["execution_note"] == "Tool executed"
+
+    sent_prompt = mock_ask_ai.call_args[0][0]
+    assert "Tool output (tool-first mode)" in sent_prompt
+    assert "parsed object count: 42" in sent_prompt
 
 
 def test_analyze_rejects_empty_uploaded_file(client):

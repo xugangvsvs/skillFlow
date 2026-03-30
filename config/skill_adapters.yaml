@@ -1,0 +1,11 @@
+skills:
+  analyze-ims2:
+    execution_mode: tool-first
+    tool:
+      command: ims2_tool
+      args_template:
+        - analyzer
+        - --input
+        - "{log_file_path}"
+      timeout_sec: 90
+    fallback: llm-only

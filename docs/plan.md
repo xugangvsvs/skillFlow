@@ -38,6 +38,8 @@
 - [ ] Optional migration: Vue 3 + Vite frontend split (later)
 
 ### Phase 3: Dynamic Forms (Future)
+- [x] Add adapter-driven tool-first mechanism (`config/skill_adapters.yaml` + `src/skill_runner.py`)
+- [x] Return execution mode (`tool-first`/`fallback`) in analyze API response
 - [ ] Extend SKILL.md with `inputs` field for parameter definitions
 - [ ] Auto-generate form fields based on inputs metadata
 - [ ] Support file upload, text, select types

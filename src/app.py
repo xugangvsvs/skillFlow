@@ -3,16 +3,21 @@ from pathlib import Path
 try:
     from src.scanner import SkillScanner
     from src.executor import CopilotExecutor
+    from src.skill_runner import SkillRunner
 except ModuleNotFoundError:
     # Allow running directly as 'python src/app.py' from project root
     import sys, os
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from src.scanner import SkillScanner
     from src.executor import CopilotExecutor
+    from src.skill_runner import SkillRunner
 import json
 
 
-def create_app(skill_path: str = "./dev-skills") -> Flask:
+def create_app(
+    skill_path: str = "./dev-skills",
+    adapter_path: str = "./config/skill_adapters.yaml",
+) -> Flask:
     """
     Factory function to create and configure the Flask application.
     
@@ -30,6 +35,7 @@ def create_app(skill_path: str = "./dev-skills") -> Flask:
     scanner = SkillScanner(skill_path)
     skills = scanner.scan()
     executor = CopilotExecutor()
+    skill_runner = SkillRunner(adapter_path=adapter_path)
     
     # Helper: find skill by name
     def find_skill_by_name(name: str):
@@ -44,12 +50,21 @@ def create_app(skill_path: str = "./dev-skills") -> Flask:
         skill_name = ""
         user_input = ""
         uploaded_log_text = ""
+        uploaded_file_name = ""
+        uploaded_file_bytes = b""
 
         if request.is_json:
             data = request.get_json(silent=True) or {}
             skill_name = (data.get("skill_name") or "").strip()
             user_input = (data.get("user_input") or "").strip()
-            return skill_name, user_input, uploaded_log_text, None
+            return (
+                skill_name,
+                user_input,
+                uploaded_log_text,
+                uploaded_file_name,
+                uploaded_file_bytes,
+                None,
+            )
 
         # Support multipart/form-data for file upload use cases.
         skill_name = (request.form.get("skill_name") or "").strip()
@@ -57,12 +72,28 @@ def create_app(skill_path: str = "./dev-skills") -> Flask:
         uploaded_file = request.files.get("log_file")
 
         if uploaded_file and uploaded_file.filename:
+            uploaded_file_name = uploaded_file.filename
             raw_bytes = uploaded_file.read()
             if not raw_bytes:
-                return skill_name, user_input, uploaded_log_text, "Uploaded log file is empty"
+                return (
+                    skill_name,
+                    user_input,
+                    uploaded_log_text,
+                    uploaded_file_name,
+                    uploaded_file_bytes,
+                    "Uploaded log file is empty",
+                )
+            uploaded_file_bytes = raw_bytes
             uploaded_log_text = raw_bytes.decode("utf-8", errors="replace")
 
-        return skill_name, user_input, uploaded_log_text, None
+        return (
+            skill_name,
+            user_input,
+            uploaded_log_text,
+            uploaded_file_name,
+            uploaded_file_bytes,
+            None,
+        )
     
     @app.route("/api/skills", methods=["GET"])
     def get_skills():
@@ -101,7 +132,14 @@ def create_app(skill_path: str = "./dev-skills") -> Flask:
         Returns:
             JSON with analysis result or error message.
         """
-        skill_name, user_input, uploaded_log_text, request_error = parse_analyze_request()
+        (
+            skill_name,
+            user_input,
+            uploaded_log_text,
+            uploaded_file_name,
+            uploaded_file_bytes,
+            request_error,
+        ) = parse_analyze_request()
 
         if request_error:
             return jsonify({"error": request_error}), 400
@@ -118,13 +156,27 @@ def create_app(skill_path: str = "./dev-skills") -> Flask:
         skill_content = skill.get("full_content", "")
         prompt = f"Using this skill spec:\n{skill_content}\n\nAnalyze this user query: {user_input}"
 
-        if uploaded_log_text:
+        tool_run = skill_runner.run_tool_if_configured(
+            skill_name=skill_name,
+            file_name=uploaded_file_name,
+            file_bytes=uploaded_file_bytes,
+        )
+
+        if tool_run["mode"] == "tool-first":
+            prompt += f"\n\nTool output (tool-first mode):\n{tool_run['tool_output']}"
+        elif uploaded_log_text:
             prompt += f"\n\nAttached log content:\n{uploaded_log_text}"
-        
+
         # Call LLM executor
         result = executor.ask_ai(prompt)
-        
-        return jsonify({"result": result}), 200
+
+        return jsonify(
+            {
+                "result": result,
+                "mode": tool_run["mode"],
+                "execution_note": tool_run["note"],
+            }
+        ), 200
     
     @app.route("/api/analyze/stream", methods=["POST"])
     def analyze_stream():
@@ -141,7 +193,14 @@ def create_app(skill_path: str = "./dev-skills") -> Flask:
         Returns:
             Streamed response chunks as SSE.
         """
-        skill_name, user_input, uploaded_log_text, request_error = parse_analyze_request()
+        (
+            skill_name,
+            user_input,
+            uploaded_log_text,
+            uploaded_file_name,
+            uploaded_file_bytes,
+            request_error,
+        ) = parse_analyze_request()
 
         if request_error:
             return jsonify({"error": request_error}), 400
@@ -156,7 +215,16 @@ def create_app(skill_path: str = "./dev-skills") -> Flask:
         # Build prompt
         skill_content = skill.get("full_content", "")
         prompt = f"Using this skill spec:\n{skill_content}\n\nAnalyze this user query: {user_input}"
-        if uploaded_log_text:
+
+        tool_run = skill_runner.run_tool_if_configured(
+            skill_name=skill_name,
+            file_name=uploaded_file_name,
+            file_bytes=uploaded_file_bytes,
+        )
+
+        if tool_run["mode"] == "tool-first":
+            prompt += f"\n\nTool output (tool-first mode):\n{tool_run['tool_output']}"
+        elif uploaded_log_text:
             prompt += f"\n\nAttached log content:\n{uploaded_log_text}"
         
         # Call LLM executor

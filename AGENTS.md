@@ -86,6 +86,7 @@ The system is composed of four modules:
 - Scanner changes must preserve compatibility with existing `SKILL.md` files.
 - Matching logic should stay case-insensitive unless explicitly changed.
 - Executor changes should preserve prompt intent and avoid leaking sensitive data.
+- Tool-first behavior should be adapter-driven via `config/skill_adapters.yaml`, not hardcoded by skill name.
 
 ## Change Management
 - Do not modify unrelated files.

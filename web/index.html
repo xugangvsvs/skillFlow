@@ -336,6 +336,12 @@
           if (!response.ok) {
             appendTerminal(data.error || "Request failed", true);
           } else {
+            if (data.mode) {
+              appendTerminal("[System] Execution mode: " + data.mode);
+            }
+            if (data.execution_note) {
+              appendTerminal("[System] " + data.execution_note);
+            }
             appendTerminal("[AI] " + (data.result || "(empty response)"));
           }
         } catch (error) {
