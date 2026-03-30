@@ -36,7 +36,7 @@ class SkillRunner:
             return self._resolved_tool_cache[command_name]
 
         probe_names = [command_name]
-        if os.name == "nt" and not command_name.lower().endswith(".exe"):
+        if not command_name.lower().endswith(".exe"):
             probe_names.append(f"{command_name}.exe")
 
         for root in self.search_roots:
