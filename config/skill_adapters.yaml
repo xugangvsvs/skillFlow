@@ -8,8 +8,8 @@ skills:
         - "{IMS2_BIN_DIR}/ims2_tool"
         - ims2_tool
       args_template:
-        - analyzer
         - --input
         - "{log_file_path}"
+        - analyzer
       timeout_sec: 90
     fallback: llm-only

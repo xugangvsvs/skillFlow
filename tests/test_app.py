@@ -169,3 +169,28 @@ def test_analyze_rejects_empty_uploaded_file(client):
 
     assert response.status_code == 400
     assert "error" in response.get_json()
+
+
+def test_analyze_truncates_huge_uploaded_log_in_fallback_prompt(client):
+    """Huge uploaded logs should be truncated in fallback prompt path to avoid oversized LLM payloads."""
+    huge_text = ("X" * 350000).encode("utf-8")
+    with patch("src.app.CopilotExecutor.ask_ai", return_value="Mocked huge-log analysis") as mock_ask_ai, \
+         patch("src.app.SkillRunner.run_tool_if_configured", return_value={
+             "mode": "fallback",
+             "tool_output": "",
+             "note": "Tool failed",
+         }):
+        response = client.post(
+            "/api/analyze",
+            data={
+                "skill_name": "analyze-ims2",
+                "user_input": "inspect huge file",
+                "log_file": (io.BytesIO(huge_text), "huge.ims2"),
+            },
+            content_type="multipart/form-data",
+        )
+
+    assert response.status_code == 200
+    sent_prompt = mock_ask_ai.call_args[0][0]
+    assert "truncated" in sent_prompt.lower()
+    assert len(sent_prompt) < 200000

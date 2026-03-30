@@ -13,6 +13,23 @@ except ModuleNotFoundError:
     from src.skill_runner import SkillRunner
 import json
 
+MAX_FALLBACK_LOG_CHARS = 120000
+
+
+def summarize_uploaded_log(log_text: str, max_chars: int = MAX_FALLBACK_LOG_CHARS) -> str:
+    """Bound uploaded log text for fallback prompt path to avoid oversized payloads."""
+    if len(log_text) <= max_chars:
+        return log_text
+
+    head = max_chars // 2
+    tail = max_chars - head
+    omitted = len(log_text) - max_chars
+    return (
+        f"{log_text[:head]}\n\n"
+        f"...[truncated {omitted} chars for payload safety]...\n\n"
+        f"{log_text[-tail:]}"
+    )
+
 
 def create_app(
     skill_path: str = "./dev-skills",
@@ -84,7 +101,9 @@ def create_app(
                     "Uploaded log file is empty",
                 )
             uploaded_file_bytes = raw_bytes
-            uploaded_log_text = raw_bytes.decode("utf-8", errors="replace")
+            uploaded_log_text = summarize_uploaded_log(
+                raw_bytes.decode("utf-8", errors="replace")
+            )
 
         return (
             skill_name,
