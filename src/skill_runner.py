@@ -2,7 +2,8 @@ import os
 import shutil
 import subprocess
 import tempfile
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import yaml
 
@@ -10,9 +11,46 @@ import yaml
 class SkillRunner:
     """Adapter-driven tool execution layer for tool-first skills."""
 
-    def __init__(self, adapter_path: str = "./config/skill_adapters.yaml"):
+    def __init__(
+        self,
+        adapter_path: str = "./config/skill_adapters.yaml",
+        search_roots: Optional[List[str]] = None,
+    ):
         self.adapter_path = adapter_path
         self.adapters = self._load_adapters(adapter_path)
+        self.search_roots = search_roots or self._default_search_roots(adapter_path)
+        self._resolved_tool_cache: Dict[str, str] = {}
+
+    def _default_search_roots(self, adapter_path: str) -> List[str]:
+        """Return default roots for tool auto-discovery."""
+        workspace_root = str(Path(adapter_path).resolve().parent.parent)
+        return [
+            workspace_root,
+            os.path.join(workspace_root, "tools"),
+            r"C:\radio_ctrl\tools",
+        ]
+
+    def _discover_tool_in_roots(self, command_name: str) -> str:
+        """Search known roots for command_name and return first executable match."""
+        if command_name in self._resolved_tool_cache:
+            return self._resolved_tool_cache[command_name]
+
+        probe_names = [command_name]
+        if os.name == "nt" and not command_name.lower().endswith(".exe"):
+            probe_names.append(f"{command_name}.exe")
+
+        for root in self.search_roots:
+            if not root or not os.path.exists(root):
+                continue
+            for current_root, _, files in os.walk(root):
+                file_set = set(files)
+                for probe in probe_names:
+                    if probe in file_set:
+                        resolved = os.path.join(current_root, probe)
+                        self._resolved_tool_cache[command_name] = resolved
+                        return resolved
+
+        return ""
 
     def _load_adapters(self, adapter_path: str) -> Dict[str, Any]:
         if not os.path.exists(adapter_path):
@@ -63,6 +101,11 @@ class SkillRunner:
             resolved = shutil.which(expanded)
             if resolved:
                 return resolved
+
+            # Built-in auto-discovery in known roots
+            discovered = self._discover_tool_in_roots(expanded)
+            if discovered:
+                return discovered
 
         return ""
 

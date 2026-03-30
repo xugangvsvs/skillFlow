@@ -75,3 +75,29 @@ def test_resolve_tool_command_from_ims2_tool_path_env(tmp_path: Path, monkeypatc
     resolved = runner._resolve_tool_command(adapter.get("tool") or {})
 
     assert resolved == str(tool_file)
+
+
+def test_resolve_tool_command_by_auto_discovery(tmp_path: Path):
+    auto_root = tmp_path / "tools"
+    nested = auto_root / "imsParser"
+    nested.mkdir(parents=True)
+    discovered_tool = nested / "ims2_tool.exe"
+    discovered_tool.write_text("", encoding="utf-8")
+
+    adapter_file = tmp_path / "adapters.yaml"
+    adapter_file.write_text(
+        "skills:\n"
+        "  analyze-ims2:\n"
+        "    execution_mode: tool-first\n"
+        "    tool:\n"
+        "      command: ims2_tool\n"
+        "      command_candidates: ['ims2_tool']\n"
+        "      args_template: ['--input', '{log_file_path}']\n",
+        encoding="utf-8",
+    )
+
+    runner = SkillRunner(adapter_path=str(adapter_file), search_roots=[str(auto_root)])
+    adapter = runner.get_adapter("analyze-ims2")
+    resolved = runner._resolve_tool_command(adapter.get("tool") or {})
+
+    assert resolved == str(discovered_tool)
