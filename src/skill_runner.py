@@ -35,6 +35,37 @@ class SkillRunner:
             return adapter
         return None
 
+    def _resolve_tool_command(self, tool_cfg: Dict[str, Any]) -> str:
+        """Resolve tool command from candidates, environment variables, and PATH."""
+        command = str(tool_cfg.get("command") or "").strip()
+        candidates = tool_cfg.get("command_candidates") or []
+
+        ordered_candidates = []
+        if command:
+            ordered_candidates.append(command)
+        ordered_candidates.extend(str(item).strip() for item in candidates if str(item).strip())
+
+        for candidate in ordered_candidates:
+            expanded = os.path.expandvars(candidate)
+            expanded = expanded.replace("{IMS2_BIN_DIR}", os.environ.get("IMS2_BIN_DIR", "")).strip()
+            if not expanded:
+                continue
+
+            # Absolute path candidate
+            if os.path.isabs(expanded) and os.path.exists(expanded):
+                return expanded
+
+            # Relative path candidate
+            if os.path.exists(expanded):
+                return os.path.abspath(expanded)
+
+            # PATH lookup candidate
+            resolved = shutil.which(expanded)
+            if resolved:
+                return resolved
+
+        return ""
+
     def run_tool_if_configured(
         self,
         skill_name: str,
@@ -59,15 +90,16 @@ class SkillRunner:
             return {"mode": "fallback", "tool_output": "", "note": "Adapter mode is not tool-first"}
 
         tool_cfg = adapter.get("tool") or {}
-        command = str(tool_cfg.get("command") or "").strip()
+        command = self._resolve_tool_command(tool_cfg)
         args_template = tool_cfg.get("args_template") or []
         timeout_sec = int(tool_cfg.get("timeout_sec") or 90)
 
         if not command:
-            return {"mode": "fallback", "tool_output": "", "note": "Tool command is missing in adapter"}
-
-        if shutil.which(command) is None:
-            return {"mode": "fallback", "tool_output": "", "note": f"Tool '{command}' not found in PATH"}
+            return {
+                "mode": "fallback",
+                "tool_output": "",
+                "note": "Tool command could not be resolved (check adapter command_candidates, IMS2_TOOL_PATH, IMS2_BIN_DIR, or PATH)",
+            }
 
         if not file_bytes:
             return {"mode": "fallback", "tool_output": "", "note": "No uploaded file provided for tool-first mode"}

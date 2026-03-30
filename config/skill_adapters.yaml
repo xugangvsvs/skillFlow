@@ -3,6 +3,10 @@ skills:
     execution_mode: tool-first
     tool:
       command: ims2_tool
+      command_candidates:
+        - "${IMS2_TOOL_PATH}"
+        - "{IMS2_BIN_DIR}/ims2_tool"
+        - ims2_tool
       args_template:
         - analyzer
         - --input

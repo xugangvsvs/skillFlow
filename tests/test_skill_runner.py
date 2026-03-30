@@ -1,4 +1,7 @@
 from pathlib import Path
+import os
+
+import pytest
 
 from src.skill_runner import SkillRunner
 
@@ -47,4 +50,28 @@ def test_run_tool_fallback_when_command_missing(tmp_path: Path):
     result = runner.run_tool_if_configured("analyze-ims2", file_name="a.ims2", file_bytes=b"123")
 
     assert result["mode"] == "fallback"
-    assert "not found" in result["note"].lower()
+    assert "could not be resolved" in result["note"].lower()
+
+
+def test_resolve_tool_command_from_ims2_tool_path_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    tool_file = tmp_path / "ims2_tool"
+    tool_file.write_text("", encoding="utf-8")
+    monkeypatch.setenv("IMS2_TOOL_PATH", str(tool_file))
+
+    adapter_file = tmp_path / "adapters.yaml"
+    adapter_file.write_text(
+        "skills:\n"
+        "  analyze-ims2:\n"
+        "    execution_mode: tool-first\n"
+        "    tool:\n"
+        "      command: ims2_tool\n"
+        "      command_candidates: ['${IMS2_TOOL_PATH}', 'ims2_tool']\n"
+        "      args_template: ['--input', '{log_file_path}']\n",
+        encoding="utf-8",
+    )
+
+    runner = SkillRunner(adapter_path=str(adapter_file))
+    adapter = runner.get_adapter("analyze-ims2")
+    resolved = runner._resolve_tool_command(adapter.get("tool") or {})
+
+    assert resolved == str(tool_file)
