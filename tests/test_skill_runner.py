@@ -1,9 +1,11 @@
 from pathlib import Path
 import os
+from types import SimpleNamespace
 
 import pytest
 
 from src.skill_runner import SkillRunner
+import src.skill_runner as skill_runner_module
 
 
 def test_load_adapters_from_yaml(tmp_path: Path):
@@ -101,3 +103,45 @@ def test_resolve_tool_command_by_auto_discovery(tmp_path: Path):
     resolved = runner._resolve_tool_command(adapter.get("tool") or {})
 
     assert resolved == str(discovered_tool)
+
+
+def test_run_tool_uses_tool_dir_as_cwd_and_enables_rust_backtrace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    tool_dir = tmp_path / "imsParser"
+    tool_dir.mkdir(parents=True)
+    tool_cmd = tool_dir / "ims2_tool.exe"
+    tool_cmd.write_text("", encoding="utf-8")
+
+    adapter_file = tmp_path / "adapters.yaml"
+    adapter_file.write_text(
+        "skills:\n"
+        "  analyze-ims2:\n"
+        "    execution_mode: tool-first\n"
+        "    tool:\n"
+        "      command: ims2_tool\n"
+        "      args_template: ['--input', '{log_file_path}', 'analyzer']\n",
+        encoding="utf-8",
+    )
+
+    runner = SkillRunner(adapter_path=str(adapter_file))
+    monkeypatch.setattr(runner, "_resolve_tool_command", lambda _: str(tool_cmd))
+
+    captured = {}
+
+    def fake_run(cmd, capture_output, text, timeout, shell, cwd, env):
+        captured["cmd"] = cmd
+        captured["cwd"] = cwd
+        captured["env"] = env
+        return SimpleNamespace(returncode=1, stdout="", stderr="thread 'main' panicked")
+
+    monkeypatch.setattr(skill_runner_module.subprocess, "run", fake_run)
+
+    result = runner.run_tool_if_configured(
+        "analyze-ims2",
+        file_name="sample.ims2",
+        file_bytes=b"123",
+    )
+
+    assert result["mode"] == "fallback"
+    assert result["reason"] == "tool_error"
+    assert captured["cwd"] == str(tool_dir)
+    assert captured["env"]["RUST_BACKTRACE"] == "1"

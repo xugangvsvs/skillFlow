@@ -121,6 +121,7 @@ class SkillRunner:
         Returns:
             {
               "mode": "tool-first" | "fallback",
+                            "reason": "...",
               "tool_output": "...",
               "note": "..."
             }
@@ -163,16 +164,25 @@ class SkillRunner:
             ]
             cmd = [command] + args
 
+            tool_cwd = os.path.dirname(command) or None
+            tool_env = os.environ.copy()
+            # Enable Rust backtrace by default for parser crash diagnostics.
+            tool_env.setdefault("RUST_BACKTRACE", "1")
+
             completed = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
                 timeout=timeout_sec,
                 shell=False,
+                cwd=tool_cwd,
+                env=tool_env,
             )
 
             if completed.returncode != 0:
                 note = completed.stderr.strip() or f"Tool exited with code {completed.returncode}"
+                if tool_cwd:
+                    note = f"{note}\n(tool cwd: {tool_cwd}, RUST_BACKTRACE={tool_env.get('RUST_BACKTRACE', '')})"
                 return {"mode": "fallback", "reason": "tool_error", "tool_output": "", "note": note}
 
             return {
