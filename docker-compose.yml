@@ -1,0 +1,32 @@
+version: '3.9'
+
+services:
+  skillflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: skillflow-app
+    ports:
+      - "5000:5000"
+    environment:
+      # Nokia internal LLM API (adjust if needed)
+      LLM_API_URL: http://hzllmapi.dyn.nesc.nokia.net:8080/v1/chat/completions
+      LLM_MODEL: qwen/qwen3-32b
+      FLASK_ENV: development
+    volumes:
+      # For development: mount local directories for hot-reload
+      - ./src:/app/src
+      - ./web:/app/web
+      - ./dev-skills:/app/dev-skills
+      - ./config:/app/config
+    # Keep container running even if main process exits (for debugging)
+    stdin_open: true
+    tty: true
+    # Restart policy: restart only on failure
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/skills"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s

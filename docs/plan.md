@@ -45,7 +45,7 @@
 - [x] Support file upload, text, select types
 
 ### Phase 4: Deployment & Polish
-- [ ] Docker containerization
+- [x] Docker containerization (Dockerfile, docker-compose.yml, README)
 - [ ] HTTPS/TLS for production
 - [ ] Authentication & SSO (future)
 - [ ] Logging & monitoring
