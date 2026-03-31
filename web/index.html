@@ -134,6 +134,32 @@
       background: #fff;
     }
 
+    #dynamic-inputs {
+      display: grid;
+      gap: 10px;
+    }
+
+    .dynamic-field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .dynamic-field label {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .dynamic-field input,
+    .dynamic-field select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      font: inherit;
+      background: #fff;
+    }
+
     .actions {
       display: flex;
       gap: 10px;
@@ -203,6 +229,7 @@
     <section class="main">
       <div class="card toolbar">
         <p id="selected-skill">Selected skill: none</p>
+        <div id="dynamic-inputs"></div>
         <textarea id="analysis-input" placeholder="Enter logs or analysis request..."></textarea>
         <input id="log-file" type="file" accept=".log,.txt,.md,.json,.xml,.csv">
         <div class="actions">
@@ -225,6 +252,7 @@
       const skillSearchEl = document.getElementById("skill-search");
       const analysisInputEl = document.getElementById("analysis-input");
       const logFileEl = document.getElementById("log-file");
+      const dynamicInputsEl = document.getElementById("dynamic-inputs");
       const analyzeBtnEl = document.getElementById("analyze-btn");
       const statusTextEl = document.getElementById("status-text");
       const terminalEl = document.getElementById("terminal-output");
@@ -259,13 +287,80 @@
             li.classList.add("active");
             selectedSkillName = skill.name || "";
             selectedSkillEl.textContent = "Selected skill: " + selectedSkillName;
+            renderDynamicInputs(skill.inputs || []);
           });
           if (index === 0 && skill.name && !selectedSkillName) {
             li.classList.add("active");
             selectedSkillName = skill.name;
             selectedSkillEl.textContent = "Selected skill: " + selectedSkillName;
+            renderDynamicInputs(skill.inputs || []);
           }
           skillListEl.appendChild(li);
+        });
+      }
+
+      function renderDynamicInputs(inputs) {
+        dynamicInputsEl.innerHTML = "";
+        if (!Array.isArray(inputs) || !inputs.length) {
+          return;
+        }
+
+        inputs.forEach(inputDef => {
+          const name = String(inputDef.name || "").trim();
+          if (!name) {
+            return;
+          }
+
+          const type = String(inputDef.type || "text").toLowerCase();
+          const labelText = inputDef.label || name;
+          const field = document.createElement("div");
+          field.className = "dynamic-field";
+
+          const label = document.createElement("label");
+          label.setAttribute("for", "dynamic-" + name);
+          label.textContent = labelText;
+          field.appendChild(label);
+
+          if (type === "select") {
+            const select = document.createElement("select");
+            select.id = "dynamic-" + name;
+            select.dataset.inputName = name;
+            select.dataset.inputType = "select";
+            const options = Array.isArray(inputDef.options) ? inputDef.options : [];
+            options.forEach(opt => {
+              const option = document.createElement("option");
+              option.value = String(opt);
+              option.textContent = String(opt);
+              select.appendChild(option);
+            });
+            if (inputDef.default != null) {
+              select.value = String(inputDef.default);
+            }
+            field.appendChild(select);
+          } else if (type === "file") {
+            const fileInput = document.createElement("input");
+            fileInput.type = "file";
+            fileInput.id = "dynamic-" + name;
+            fileInput.dataset.inputName = name;
+            fileInput.dataset.inputType = "file";
+            if (inputDef.accept) {
+              fileInput.accept = String(inputDef.accept);
+            }
+            field.appendChild(fileInput);
+          } else {
+            const textInput = document.createElement("input");
+            textInput.type = "text";
+            textInput.id = "dynamic-" + name;
+            textInput.dataset.inputName = name;
+            textInput.dataset.inputType = "text";
+            textInput.placeholder = inputDef.placeholder || "";
+            if (inputDef.default != null) {
+              textInput.value = String(inputDef.default);
+            }
+            field.appendChild(textInput);
+          }
+
+          dynamicInputsEl.appendChild(field);
         });
       }
 
@@ -315,16 +410,42 @@
         appendTerminal("[System] Submitting request for skill: " + selectedSkillName);
 
         const selectedFile = logFileEl.files && logFileEl.files.length ? logFileEl.files[0] : null;
-        if (selectedFile) {
-          appendTerminal("[System] Attached log file: " + selectedFile.name);
+        const inputParams = {};
+        let dynamicFile = null;
+        const dynamicFields = dynamicInputsEl.querySelectorAll("[data-input-name]");
+        dynamicFields.forEach(el => {
+          const name = el.dataset.inputName;
+          const type = el.dataset.inputType;
+          if (!name) {
+            return;
+          }
+          if (type === "file") {
+            const picked = el.files && el.files.length ? el.files[0] : null;
+            if (picked) {
+              inputParams[name] = picked.name;
+              if (!dynamicFile) {
+                dynamicFile = picked;
+              }
+            }
+            return;
+          }
+          if (el.value && String(el.value).trim()) {
+            inputParams[name] = String(el.value).trim();
+          }
+        });
+
+        const effectiveFile = selectedFile || dynamicFile;
+        if (effectiveFile) {
+          appendTerminal("[System] Attached log file: " + effectiveFile.name);
         }
 
         try {
           const formData = new FormData();
           formData.append("skill_name", selectedSkillName);
           formData.append("user_input", userInput);
-          if (selectedFile) {
-            formData.append("log_file", selectedFile);
+          formData.append("input_params", JSON.stringify(inputParams));
+          if (effectiveFile) {
+            formData.append("log_file", effectiveFile);
           }
 
           const response = await fetch("/api/analyze", {

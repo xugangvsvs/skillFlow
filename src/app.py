@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request, Response, send_from_directory
 from pathlib import Path
+from typing import Any, Dict
 try:
     from src.scanner import SkillScanner
     from src.executor import CopilotExecutor
@@ -67,6 +68,7 @@ def create_app(
         user_input: str,
         tool_run: dict,
         uploaded_log_text: str,
+        input_params: Dict[str, Any],
     ) -> str:
         """Build the LLM prompt based on tool execution outcome.
 
@@ -76,6 +78,17 @@ def create_app(
         """
         prompt = f"Using this skill spec:\n{skill_content}\n\nAnalyze this user query: {user_input}"
         reason = tool_run.get("reason", "")
+
+        if input_params:
+            param_lines = []
+            for key, value in input_params.items():
+                if value is None:
+                    continue
+                value_str = str(value).strip()
+                if value_str:
+                    param_lines.append(f"- {key}: {value_str}")
+            if param_lines:
+                prompt += "\n\nInput parameters:\n" + "\n".join(param_lines)
 
         if tool_run["mode"] == "tool-first":
             prompt += f"\n\nTool output (tool-first mode):\n{tool_run['tool_output']}"
@@ -97,6 +110,7 @@ def create_app(
         """Parse analyze payload from JSON or multipart form data."""
         skill_name = ""
         user_input = ""
+        input_params: Dict[str, Any] = {}
         uploaded_log_text = ""
         uploaded_file_name = ""
         uploaded_file_bytes = b""
@@ -105,9 +119,13 @@ def create_app(
             data = request.get_json(silent=True) or {}
             skill_name = (data.get("skill_name") or "").strip()
             user_input = (data.get("user_input") or "").strip()
+            raw_params = data.get("input_params")
+            if isinstance(raw_params, dict):
+                input_params = raw_params
             return (
                 skill_name,
                 user_input,
+                input_params,
                 uploaded_log_text,
                 uploaded_file_name,
                 uploaded_file_bytes,
@@ -117,6 +135,14 @@ def create_app(
         # Support multipart/form-data for file upload use cases.
         skill_name = (request.form.get("skill_name") or "").strip()
         user_input = (request.form.get("user_input") or "").strip()
+        raw_params = request.form.get("input_params")
+        if raw_params:
+            try:
+                parsed = json.loads(raw_params)
+                if isinstance(parsed, dict):
+                    input_params = parsed
+            except (TypeError, ValueError):
+                input_params = {}
         uploaded_file = request.files.get("log_file")
 
         if uploaded_file and uploaded_file.filename:
@@ -126,6 +152,7 @@ def create_app(
                 return (
                     skill_name,
                     user_input,
+                    input_params,
                     uploaded_log_text,
                     uploaded_file_name,
                     uploaded_file_bytes,
@@ -139,6 +166,7 @@ def create_app(
         return (
             skill_name,
             user_input,
+            input_params,
             uploaded_log_text,
             uploaded_file_name,
             uploaded_file_bytes,
@@ -158,6 +186,7 @@ def create_app(
                 "name": s.get("name"),
                 "description": s.get("description"),
                 "id": s.get("id"),
+                "inputs": s.get("inputs") or [],
             }
             for s in skills
         ]
@@ -185,6 +214,7 @@ def create_app(
         (
             skill_name,
             user_input,
+            input_params,
             uploaded_log_text,
             uploaded_file_name,
             uploaded_file_bytes,
@@ -211,7 +241,7 @@ def create_app(
             file_bytes=uploaded_file_bytes,
         )
 
-        prompt = build_prompt(skill_content, user_input, tool_run, uploaded_log_text)
+        prompt = build_prompt(skill_content, user_input, tool_run, uploaded_log_text, input_params)
 
         # Call LLM executor
         result = executor.ask_ai(prompt)
@@ -242,6 +272,7 @@ def create_app(
         (
             skill_name,
             user_input,
+            input_params,
             uploaded_log_text,
             uploaded_file_name,
             uploaded_file_bytes,
@@ -267,7 +298,7 @@ def create_app(
             file_bytes=uploaded_file_bytes,
         )
 
-        prompt = build_prompt(skill_content, user_input, tool_run, uploaded_log_text)
+        prompt = build_prompt(skill_content, user_input, tool_run, uploaded_log_text, input_params)
         
         # Call LLM executor
         # Note: For now, we'll return the full result in chunks

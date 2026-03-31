@@ -1,6 +1,7 @@
 import pytest
 import json
 import io
+from pathlib import Path
 from unittest.mock import patch
 from src.app import create_app
 
@@ -26,6 +27,40 @@ def test_get_skills(client):
     if data:
         assert "name" in data[0]
         assert "description" in data[0]
+        assert "inputs" in data[0]
+
+
+def test_get_skills_exposes_inputs_metadata_from_front_matter(tmp_path: Path):
+    skill_dir = tmp_path / "demo-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "id: demo\n"
+        "name: demo-skill\n"
+        "description: demo description\n"
+        "inputs:\n"
+        "  - name: analysis_mode\n"
+        "    type: select\n"
+        "    label: Analysis mode\n"
+        "    options: [topology, state]\n"
+        "    default: topology\n"
+        "---\n"
+        "body\n",
+        encoding="utf-8",
+    )
+
+    app = create_app(skill_path=str(tmp_path))
+    app.config["TESTING"] = True
+    with app.test_client() as client:
+        response = client.get("/api/skills")
+
+    assert response.status_code == 200
+    skills = response.get_json()
+    assert isinstance(skills, list)
+    assert len(skills) == 1
+    assert skills[0]["name"] == "demo-skill"
+    assert isinstance(skills[0]["inputs"], list)
+    assert skills[0]["inputs"][0]["name"] == "analysis_mode"
 
 
 def test_analyze_with_valid_skill(client):
@@ -100,6 +135,7 @@ def test_web_home_page_contains_search_and_file_upload(client):
 
     assert "id=\"skill-search\"" in html
     assert "id=\"log-file\"" in html
+    assert "id=\"dynamic-inputs\"" in html
 
 
 def test_analyze_accepts_multipart_with_uploaded_file(client):
@@ -225,3 +261,33 @@ def test_analyze_truncates_huge_uploaded_log_in_fallback_prompt(client):
     sent_prompt = mock_ask_ai.call_args[0][0]
     assert "truncated" in sent_prompt.lower()
     assert len(sent_prompt) < 200000
+
+
+def test_analyze_includes_dynamic_input_params_in_prompt(client):
+    with patch("src.app.CopilotExecutor.ask_ai", return_value="ok") as mock_ask_ai, \
+         patch("src.app.SkillRunner.run_tool_if_configured", return_value={
+             "mode": "fallback",
+             "reason": "no_adapter",
+             "tool_output": "",
+             "note": "No adapter configured",
+         }):
+        response = client.post(
+            "/api/analyze",
+            data={
+                "skill_name": "analyze-ims2",
+                "user_input": "check this",
+                "input_params": json.dumps(
+                    {
+                        "analysis_mode": "topology",
+                        "focus_object": "RMOD_L-1",
+                    }
+                ),
+            },
+            content_type="multipart/form-data",
+        )
+
+    assert response.status_code == 200
+    sent_prompt = mock_ask_ai.call_args[0][0]
+    assert "Input parameters" in sent_prompt
+    assert "analysis_mode: topology" in sent_prompt
+    assert "focus_object: RMOD_L-1" in sent_prompt

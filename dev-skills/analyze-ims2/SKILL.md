@@ -1,6 +1,24 @@
 ---
 name: analyze-ims2
 description: Use when analyzing IMS2 snapshots to inspect managed objects, state transitions, object state at a moment, fronthaul topology, or frame metadata in radio fault investigations.
+inputs:
+  - name: analysis_mode
+    type: select
+    label: Analysis Mode
+    options:
+      - topology
+      - state
+      - transitions
+      - metadata
+    default: topology
+  - name: focus_object
+    type: text
+    label: Focus Object Regex
+    placeholder: RMOD_L-\\d+$=stateInfo.operationalState
+  - name: snapshot_file
+    type: file
+    label: IMS2 Snapshot File
+    accept: .ims2
 ---
 
 # Analyze IMS2
