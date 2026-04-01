@@ -34,6 +34,10 @@ EXPOSE 5000
 ENV LLM_API_URL=http://hzllmapi.dyn.nesc.nokia.net:8080/v1/chat/completions
 ENV LLM_MODEL=qwen/qwen3-32b
 ENV FLASK_ENV=production
+# Optional: set to a GitLab HTTPS clone URL to pull skills at container start
+# ENV GITLAB_REPO_URL=https://gitlabe2.ext.net.nokia.com/boam-fh-ai/dev-skills.git
+# ENV GITLAB_BRANCH=main
+# ENV GITLAB_TOKEN=<your-personal-access-token>
 
 # Run Flask application
 CMD ["python", "-m", "src.app"]

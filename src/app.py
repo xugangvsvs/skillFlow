@@ -57,7 +57,7 @@ def summarize_uploaded_log(log_text: str, max_chars: int = MAX_FALLBACK_LOG_CHAR
 
 
 def create_app(
-    skill_path: str = "./dev-skills",
+    skill_path: str = "",
     adapter_path: str = "./config/skill_adapters.yaml",
 ) -> Flask:
     """
@@ -65,6 +65,8 @@ def create_app(
     
     Args:
         skill_path: Path to the dev-skills directory for skill discovery.
+        When empty, falls back to GITLAB_REPO_URL env var (GitLab mode) or
+        the local './dev-skills' directory.
     
     Returns:
         Configured Flask app instance.
@@ -73,8 +75,18 @@ def create_app(
     web_root = project_root / "web"
     app = Flask(__name__, static_folder=str(web_root), static_url_path="/web")
     
+    # GitLab integration: read env vars for remote skill sync
+    import os
+    gitlab_repo_url: str = os.environ.get("GITLAB_REPO_URL", "")
+    gitlab_branch: str = os.environ.get("GITLAB_BRANCH", "main")
+    resolved_skill_path: str = skill_path or os.environ.get("SKILLS_PATH", "./dev-skills")
+
     # Initialize scanner and executor at app startup
-    scanner = SkillScanner(skill_path)
+    scanner = SkillScanner(
+        repo_path=resolved_skill_path,
+        gitlab_repo_url=gitlab_repo_url or None,
+        gitlab_branch=gitlab_branch,
+    )
     skills = scanner.scan()
     executor = CopilotExecutor()
     skill_runner = SkillRunner(adapter_path=adapter_path)

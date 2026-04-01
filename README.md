@@ -75,6 +75,10 @@ skillFlow/
 | `LLM_API_URL` | `http://hzllmapi.dyn.nesc.nokia.net:8080/v1/chat/completions` | Nokia internal LLM endpoint |
 | `LLM_MODEL` | `qwen/qwen3-32b` | LLM model name |
 | `FLASK_ENV` | `production` | Flask environment (set to `development` for debug) |
+| `GITLAB_REPO_URL` | *(empty)* | GitLab HTTPS clone URL for remote skill definitions (e.g. `https://gitlabe2.ext.net.nokia.com/boam-fh-ai/dev-skills.git`). Leave empty to use local `dev-skills/` directory. |
+| `GITLAB_BRANCH` | `main` | Branch to clone/pull from when `GITLAB_REPO_URL` is set. |
+| `GITLAB_TOKEN` | *(empty)* | GitLab personal access token (PAT) for private repos. Injected as `oauth2:<token>@` in the clone URL — never logged. |
+| `SKILLS_PATH` | `./dev-skills` | Local path to skill definitions; overridden by `GITLAB_REPO_URL` if set. |
 
 ### Git Configuration (Intranet Proxy)
 

@@ -13,6 +13,10 @@ services:
       LLM_API_URL: http://hzllmapi.dyn.nesc.nokia.net:8080/v1/chat/completions
       LLM_MODEL: qwen/qwen3-32b
       FLASK_ENV: development
+        # GitLab skill sync (optional — leave blank to use local dev-skills/)
+        GITLAB_REPO_URL: ${GITLAB_REPO_URL:-}
+        GITLAB_BRANCH: ${GITLAB_BRANCH:-main}
+        GITLAB_TOKEN: ${GITLAB_TOKEN:-}
     volumes:
       # For development: mount local directories for hot-reload
       - ./src:/app/src
