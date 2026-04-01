@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 import subprocess
@@ -6,6 +7,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
+
+log = logging.getLogger("skillflow.skill_runner")
 
 
 class SkillRunner:
@@ -126,11 +129,14 @@ class SkillRunner:
               "note": "..."
             }
         """
+        log.debug("run_tool_if_configured: skill=%s file=%s", skill_name, file_name)
         adapter = self.get_adapter(skill_name)
         if not adapter:
+            log.debug("No adapter configured for skill '%s', falling back to LLM", skill_name)
             return {"mode": "fallback", "reason": "no_adapter", "tool_output": "", "note": "No adapter configured"}
 
         if adapter.get("execution_mode") != "tool-first":
+            log.debug("Adapter mode is not tool-first for '%s'", skill_name)
             return {"mode": "fallback", "reason": "not_tool_first", "tool_output": "", "note": "Adapter mode is not tool-first"}
 
         tool_cfg = adapter.get("tool") or {}
@@ -139,6 +145,7 @@ class SkillRunner:
         timeout_sec = int(tool_cfg.get("timeout_sec") or 90)
 
         if not command:
+            log.warning("Tool command could not be resolved for skill '%s'", skill_name)
             return {
                 "mode": "fallback",
                 "reason": "command_not_found",
@@ -147,6 +154,7 @@ class SkillRunner:
             }
 
         if not file_bytes:
+            log.debug("No file bytes provided for tool-first execution of '%s'", skill_name)
             return {"mode": "fallback", "reason": "no_file", "tool_output": "", "note": "No uploaded file provided for tool-first mode"}
 
         suffix = os.path.splitext(file_name)[1] if file_name else ".log"
@@ -169,6 +177,7 @@ class SkillRunner:
             # Enable Rust backtrace by default for parser crash diagnostics.
             tool_env.setdefault("RUST_BACKTRACE", "1")
 
+            log.info("Executing tool: cmd=%s cwd=%s", cmd, tool_cwd)
             completed = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -183,8 +192,10 @@ class SkillRunner:
                 note = completed.stderr.strip() or f"Tool exited with code {completed.returncode}"
                 if tool_cwd:
                     note = f"{note}\n(tool cwd: {tool_cwd}, RUST_BACKTRACE={tool_env.get('RUST_BACKTRACE', '')})"
+                log.warning("Tool exited with error: skill=%s returncode=%d", skill_name, completed.returncode)
                 return {"mode": "fallback", "reason": "tool_error", "tool_output": "", "note": note}
 
+            log.info("Tool executed successfully: skill=%s output_len=%d", skill_name, len(completed.stdout))
             return {
                 "mode": "tool-first",
                 "reason": "tool_success",
@@ -192,8 +203,10 @@ class SkillRunner:
                 "note": f"Tool '{command}' executed successfully",
             }
         except subprocess.TimeoutExpired:
+            log.warning("Tool execution timed out: skill=%s timeout=%ds", skill_name, timeout_sec)
             return {"mode": "fallback", "reason": "tool_timeout", "tool_output": "", "note": "Tool execution timed out"}
         except Exception as exc:
+            log.warning("Tool execution error: skill=%s error=%s", skill_name, exc)
             return {"mode": "fallback", "reason": "tool_error", "tool_output": "", "note": f"Tool execution error: {exc}"}
         finally:
             if tmp_file is not None:

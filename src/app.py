@@ -13,6 +13,30 @@ except ModuleNotFoundError:
     from src.executor import CopilotExecutor
     from src.skill_runner import SkillRunner
 import json
+import logging
+
+log = logging.getLogger("skillflow.app")
+
+
+def configure_logging(level: str = "INFO") -> None:
+    """Configure structured logging for the SkillFlow application.
+
+    Call once at startup (e.g. in __main__ or a WSGI entry point).
+    All skillflow.* loggers will emit timestamped lines to stdout.
+    """
+    numeric_level = getattr(logging, level.upper(), logging.INFO)
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%Y-%m-%dT%H:%M:%S",
+        )
+    )
+    root = logging.getLogger("skillflow")
+    root.setLevel(numeric_level)
+    if not root.handlers:
+        root.addHandler(handler)
+
 
 MAX_FALLBACK_LOG_CHARS = 120000
 
@@ -239,6 +263,12 @@ def create_app(
             skill_name=skill_name,
             file_name=uploaded_file_name,
             file_bytes=uploaded_file_bytes,
+        )
+
+        log.info(
+            "analyze request: skill=%s mode=%s file=%s input_len=%d",
+            skill_name, tool_run["mode"],
+            uploaded_file_name or "none", len(user_input)
         )
 
         prompt = build_prompt(skill_content, user_input, tool_run, uploaded_log_text, input_params)
