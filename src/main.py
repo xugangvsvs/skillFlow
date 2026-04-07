@@ -1,23 +1,29 @@
-import os
 from pathlib import Path
 
 from src.executor import CopilotExecutor
 from src.scanner import SkillScanner, match_skill
+from src.skillflow_config import load_skillflow_config, pick_str
 from src.skill_paths import resolve_skill_repo_dir
+
+_DEFAULT_LLM_API_URL = "http://hzllmapi.dyn.nesc.nokia.net:8080/v1/chat/completions"
+_DEFAULT_LLM_MODEL = "qwen/qwen3-32b"
 
 
 def run_app():
     project_root = Path(__file__).resolve().parent.parent
-    skills_dir = resolve_skill_repo_dir(project_root, "")
+    file_cfg = load_skillflow_config(project_root)
+    skills_dir = resolve_skill_repo_dir(project_root, "", file_cfg)
     skills_dir.parent.mkdir(parents=True, exist_ok=True)
-    gitlab_url = (os.environ.get("GITLAB_REPO_URL") or "").strip() or None
-    gitlab_branch = os.environ.get("GITLAB_BRANCH", "main")
+    gitlab_url = pick_str("GITLAB_REPO_URL", file_cfg, "gitlab_repo_url", "") or None
+    gitlab_branch = pick_str("GITLAB_BRANCH", file_cfg, "gitlab_branch", "main")
+    llm_url = pick_str("LLM_API_URL", file_cfg, "llm_api_url", _DEFAULT_LLM_API_URL)
+    llm_model = pick_str("LLM_MODEL", file_cfg, "llm_model", _DEFAULT_LLM_MODEL)
     scanner = SkillScanner(
         repo_path=str(skills_dir),
         gitlab_repo_url=gitlab_url,
         gitlab_branch=gitlab_branch,
     )
-    executor = CopilotExecutor()
+    executor = CopilotExecutor(api_url=llm_url, model=llm_model)
 
     print("\n" + "="*50)
     print("   Nokia AI SkillFlow: 40+ Skills Loaded   ")

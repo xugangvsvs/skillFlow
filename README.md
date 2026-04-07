@@ -52,12 +52,15 @@ skillFlow/
 │   ├── app.py               # Flask web app
 │   ├── scanner.py           # SKILL.md parser
 │   ├── executor.py          # LLM API caller
-│   └── skill_runner.py      # Tool-first execution layer
+│   ├── skill_runner.py      # Tool-first execution layer
+│   ├── skill_paths.py       # Resolve local vs GitLab clone directory
+│   └── skillflow_config.py  # Load config/skillflow.yaml (env overrides)
 ├── dev-skills/              # Skill definitions
 │   └── analyze-ims2/        # Example: IMS2 analysis skill
 │       └── SKILL.md
 ├── config/
-│   └── skill_adapters.yaml  # Tool execution config
+│   ├── skill_adapters.yaml  # Tool execution config
+│   └── skillflow.example.yaml  # Copy to skillflow.yaml for local settings
 ├── web/
 │   └── index.html           # Web UI (Vanilla JS)
 ├── tests/                   # Unit tests
@@ -68,32 +71,48 @@ skillFlow/
 
 ## Configuration
 
+### Configuration file (`config/skillflow.yaml`)
+
+You can store non-secret defaults in YAML instead of exporting many environment variables.
+
+1. Copy the template: `config/skillflow.example.yaml` → `config/skillflow.yaml`
+2. Edit `gitlab_repo_url`, `gitlab_branch`, optional `skills_path` / `gitlab_skills_cache`, optional `llm_api_url` / `llm_model`, optional `log_level`.
+3. **Do not** put `GITLAB_TOKEN` or other secrets in this file — use environment variables for those.
+
+**Precedence:** for each setting, if the **environment variable** is set and non-empty, it **overrides** the YAML value.
+
+**Alternate path:** set `SKILLFLOW_CONFIG` to another YAML file (absolute path or path relative to the project root).
+
 ### Environment Variables
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `LLM_API_URL` | `http://hzllmapi.dyn.nesc.nokia.net:8080/v1/chat/completions` | Nokia internal LLM endpoint |
-| `LLM_MODEL` | `qwen/qwen3-32b` | LLM model name |
+| `SKILLFLOW_CONFIG` | *(empty)* | Optional path to a YAML file instead of `config/skillflow.yaml`. |
+| `LLM_API_URL` | `http://hzllmapi.dyn.nesc.nokia.net:8080/v1/chat/completions` | Nokia internal LLM endpoint (overrides `llm_api_url` in YAML). |
+| `LLM_MODEL` | `qwen/qwen3-32b` | LLM model name (overrides `llm_model` in YAML). |
 | `FLASK_ENV` | `production` | Flask environment (set to `development` for debug) |
-| `GITLAB_REPO_URL` | *(empty)* | If set, skills are loaded from this GitLab repo: clone on first start, `git pull --ff-only` on each app start. Use HTTPS URL (e.g. `https://gitlab.example.com/group/dev-skills.git`). Leave empty to use only local `dev-skills/`. |
-| `GITLAB_BRANCH` | `main` | Branch to clone/pull when `GITLAB_REPO_URL` is set. |
-| `GITLAB_TOKEN` | *(empty)* | GitLab personal access token (PAT) for private repos. Injected as `oauth2:<token>@` in the clone URL — never logged. |
-| `GITLAB_SKILLS_CACHE` | *(empty)* | When `GITLAB_REPO_URL` is set: directory to clone into. Default: `<repo>/var/gitlab-skills` (avoids overwriting the bundled `dev-skills/` tree). |
-| `SKILLS_PATH` | *(see below)* | If set, **always** use this directory for skills (no GitLab sync). If unset and `GITLAB_REPO_URL` is set, uses `GITLAB_SKILLS_CACHE` or `var/gitlab-skills`. If both unset, uses `dev-skills/` under the project root. |
-| `SKILLFLOW_LOG_LEVEL` | `INFO` | Root log level for `skillflow.*` loggers (`DEBUG`, `INFO`, `WARNING`, …). |
+| `GITLAB_REPO_URL` | *(empty)* | Same as YAML `gitlab_repo_url`: clone/pull skills from this HTTPS URL. |
+| `GITLAB_BRANCH` | `main` | Same as YAML `gitlab_branch`. |
+| `GITLAB_TOKEN` | *(empty)* | GitLab personal access token (PAT) for private repos. Injected as `oauth2:<token>@` in the clone URL — never logged. **Env only — not read from YAML.** |
+| `GITLAB_SKILLS_CACHE` | *(empty)* | Same as YAML `gitlab_skills_cache` when using GitLab. |
+| `SKILLS_PATH` | *(see below)* | Same as YAML `skills_path`: if set, that directory is used and GitLab sync is skipped. |
+| `SKILLFLOW_LOG_LEVEL` | `INFO` | Same as YAML `log_level` for `skillflow.*` loggers. |
 
 ### Load skills from GitLab
 
-Skills are discovered from any `**/SKILL.md` under the resolved skills directory. To use the **real** skill repo on GitLab instead of (or in addition to) the sample tree under `dev-skills/`:
+Skills are discovered from any `**/SKILL.md` under the resolved skills directory. To use the **real** skill repo on GitLab instead of the sample tree under `dev-skills/`:
 
-1. Set `GITLAB_REPO_URL` to the HTTPS clone URL of your skills repository.
-2. For private repos, set `GITLAB_TOKEN` (PAT). It is embedded in the clone URL and never logged.
-3. Leave `SKILLS_PATH` **unset** so the app can clone/pull into the default cache: `<project_root>/var/gitlab-skills` (override with `GITLAB_SKILLS_CACHE` if needed).
-4. On each process start, SkillFlow runs `git pull --ff-only` if the cache already exists, or `git clone` on first run.
+**Option A — config file:** in `config/skillflow.yaml` set `gitlab_repo_url` (and optionally `gitlab_branch`, `gitlab_skills_cache`). For a private repo, still set `GITLAB_TOKEN` in the environment.
 
-If you **set `SKILLS_PATH`**, that directory is used as-is and **GitLab sync is not run** (offline / custom layout).
+**Option B — environment only:** set `GITLAB_REPO_URL` (and optional vars as below).
 
-Example (local run from the repository root):
+1. For private repos, set `GITLAB_TOKEN` (PAT). It is embedded in the clone URL and never logged.
+2. Leave `skills_path` / `SKILLS_PATH` **unset** so the app can clone/pull into the default cache: `<project_root>/var/gitlab-skills` (override with `gitlab_skills_cache` / `GITLAB_SKILLS_CACHE` if needed).
+3. On each process start, SkillFlow runs `git pull --ff-only` if the cache already exists, or `git clone` on first run.
+
+If you **set `skills_path` / `SKILLS_PATH`**, that directory is used as-is and **GitLab sync is not run** (offline / custom layout).
+
+Example (environment variables, local run from the repository root):
 
 ```bash
 set GITLAB_REPO_URL=https://your.gitlab.example.com/group/dev-skills.git

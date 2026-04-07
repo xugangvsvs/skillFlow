@@ -7,13 +7,6 @@ import pytest
 from src.skill_paths import resolve_skill_repo_dir
 
 
-@pytest.fixture
-def project_root(tmp_path: Path) -> Path:
-    root = tmp_path / "proj"
-    root.mkdir()
-    return root
-
-
 def test_override_wins(project_root: Path):
     custom = project_root / "my-skills"
     custom.mkdir()
@@ -42,3 +35,30 @@ def test_gitlab_respects_gitlab_skills_cache_env(project_root: Path, monkeypatch
     cache = tmp_path / "skill-cache"
     monkeypatch.setenv("GITLAB_SKILLS_CACHE", str(cache))
     assert resolve_skill_repo_dir(project_root, "") == cache.resolve()
+
+
+def test_gitlab_from_yaml_only(project_root: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("GITLAB_REPO_URL", raising=False)
+    monkeypatch.delenv("SKILLS_PATH", raising=False)
+    monkeypatch.delenv("GITLAB_SKILLS_CACHE", raising=False)
+    fc = {"gitlab_repo_url": "https://gitlab.example.com/group/dev-skills.git"}
+    expected = project_root / "var" / "gitlab-skills"
+    assert resolve_skill_repo_dir(project_root, "", fc) == expected.resolve()
+
+
+def test_skills_path_from_yaml(project_root: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("SKILLS_PATH", raising=False)
+    monkeypatch.delenv("GITLAB_REPO_URL", raising=False)
+    d = project_root / "from-yaml"
+    d.mkdir()
+    fc = {"skills_path": "from-yaml"}
+    assert resolve_skill_repo_dir(project_root, "", fc) == d.resolve()
+
+
+def test_env_overrides_yaml_skills_path(project_root: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("SKILLS_PATH", "from-env")
+    d = project_root / "from-env"
+    d.mkdir()
+    fc = {"skills_path": "from-yaml-should-lose"}
+    (project_root / "from-yaml-should-lose").mkdir()
+    assert resolve_skill_repo_dir(project_root, "", fc) == d.resolve()

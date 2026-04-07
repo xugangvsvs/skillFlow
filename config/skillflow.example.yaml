@@ -1,0 +1,21 @@
+# Copy to config/skillflow.yaml and adjust (that file is gitignored by default).
+# Precedence: environment variables override these values. Do not put secrets here;
+# use GITLAB_TOKEN in the environment for private GitLab repos.
+
+# --- Skills (SKILL.md trees) ---
+# If set, use this directory only (no GitLab clone/pull).
+# skills_path: dev-skills
+
+# GitLab skills repository (HTTPS). Leave empty to use local skills_path or default dev-skills/.
+gitlab_repo_url: ""
+gitlab_branch: main
+
+# Clone/pull cache when gitlab_repo_url is set (default: var/gitlab-skills under project root).
+# gitlab_skills_cache: ""
+
+# --- LLM (optional; defaults match intranet Nokia endpoint) ---
+# llm_api_url: "http://hzllmapi.dyn.nesc.nokia.net:8080/v1/chat/completions"
+# llm_model: "qwen/qwen3-32b"
+
+# --- Logging ---
+# log_level: INFO

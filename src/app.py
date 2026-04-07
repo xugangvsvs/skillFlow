@@ -17,9 +17,13 @@ import logging
 import os
 
 from src.logging_context import CorrelationIdFilter, correlation_id_var, get_or_create_correlation_id
+from src.skillflow_config import load_skillflow_config, pick_str
 from src.skill_paths import resolve_skill_repo_dir
 
 log = logging.getLogger("skillflow.app")
+
+_DEFAULT_LLM_API_URL = "http://hzllmapi.dyn.nesc.nokia.net:8080/v1/chat/completions"
+_DEFAULT_LLM_MODEL = "qwen/qwen3-32b"
 
 
 def configure_logging(level: Optional[str] = None) -> None:
@@ -83,9 +87,11 @@ def create_app(
     Returns:
         Configured Flask app instance.
     """
-    configure_logging()
-
     project_root = Path(__file__).resolve().parent.parent
+    file_cfg = load_skillflow_config(project_root)
+    log_level_cfg = pick_str("SKILLFLOW_LOG_LEVEL", file_cfg, "log_level", "")
+    configure_logging(level=log_level_cfg if log_level_cfg else None)
+
     web_root = project_root / "web"
     app = Flask(__name__, static_folder=str(web_root), static_url_path="/web")
 
@@ -103,20 +109,22 @@ def create_app(
             response.headers["X-Request-ID"] = str(cid)
         return response
 
-    # GitLab integration: read env vars for remote skill sync
-    gitlab_repo_url: str = os.environ.get("GITLAB_REPO_URL", "")
-    gitlab_branch: str = os.environ.get("GITLAB_BRANCH", "main")
-    skills_dir = resolve_skill_repo_dir(project_root, skill_path)
+    gitlab_repo_url = pick_str("GITLAB_REPO_URL", file_cfg, "gitlab_repo_url", "")
+    gitlab_branch = pick_str("GITLAB_BRANCH", file_cfg, "gitlab_branch", "main")
+    skills_dir = resolve_skill_repo_dir(project_root, skill_path, file_cfg)
     skills_dir.parent.mkdir(parents=True, exist_ok=True)
+
+    llm_url = pick_str("LLM_API_URL", file_cfg, "llm_api_url", _DEFAULT_LLM_API_URL)
+    llm_model = pick_str("LLM_MODEL", file_cfg, "llm_model", _DEFAULT_LLM_MODEL)
 
     # Initialize scanner and executor at app startup
     scanner = SkillScanner(
         repo_path=str(skills_dir),
-        gitlab_repo_url=(gitlab_repo_url.strip() or None),
+        gitlab_repo_url=(gitlab_repo_url or None),
         gitlab_branch=gitlab_branch,
     )
     skills = scanner.scan()
-    executor = CopilotExecutor()
+    executor = CopilotExecutor(api_url=llm_url, model=llm_model)
     skill_runner = SkillRunner(adapter_path=adapter_path)
     
     # Helper: find skill by name

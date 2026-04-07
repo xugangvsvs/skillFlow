@@ -28,3 +28,6 @@ Thumbs.db
 
 # GitLab skill clone cache (local dev / compose)
 var/
+
+# Local SkillFlow settings (copy from config/skillflow.example.yaml)
+config/skillflow.yaml
