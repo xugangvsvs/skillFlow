@@ -1,6 +1,6 @@
-from flask import Flask, jsonify, request, Response, send_from_directory
+from flask import Flask, g, jsonify, request, Response, send_from_directory
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 try:
     from src.scanner import SkillScanner
     from src.executor import CopilotExecutor
@@ -14,28 +14,40 @@ except ModuleNotFoundError:
     from src.skill_runner import SkillRunner
 import json
 import logging
+import os
+
+from src.logging_context import CorrelationIdFilter, correlation_id_var, get_or_create_correlation_id
 
 log = logging.getLogger("skillflow.app")
 
 
-def configure_logging(level: str = "INFO") -> None:
+def configure_logging(level: Optional[str] = None) -> None:
     """Configure structured logging for the SkillFlow application.
 
     Call once at startup (e.g. in __main__ or a WSGI entry point).
     All skillflow.* loggers will emit timestamped lines to stdout.
+    Log level defaults to ``SKILLFLOW_LOG_LEVEL`` env (or INFO). Lines include
+    request correlation id when set via :func:`correlation_id_var`.
     """
+    if level is None:
+        level = os.environ.get("SKILLFLOW_LOG_LEVEL", "INFO")
     numeric_level = getattr(logging, level.upper(), logging.INFO)
-    handler = logging.StreamHandler()
-    handler.setFormatter(
-        logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            datefmt="%Y-%m-%dT%H:%M:%S",
-        )
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] [%(correlation_id)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
     )
     root = logging.getLogger("skillflow")
     root.setLevel(numeric_level)
     if not root.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(formatter)
+        handler.addFilter(CorrelationIdFilter())
         root.addHandler(handler)
+    else:
+        for handler in root.handlers:
+            handler.setFormatter(formatter)
+            if not any(isinstance(f, CorrelationIdFilter) for f in handler.filters):
+                handler.addFilter(CorrelationIdFilter())
 
 
 MAX_FALLBACK_LOG_CHARS = 120000
@@ -71,12 +83,27 @@ def create_app(
     Returns:
         Configured Flask app instance.
     """
+    configure_logging()
+
     project_root = Path(__file__).resolve().parent.parent
     web_root = project_root / "web"
     app = Flask(__name__, static_folder=str(web_root), static_url_path="/web")
-    
+
+    @app.before_request
+    def _assign_correlation_id() -> None:
+        hdr = request.headers.get("X-Request-ID") or request.headers.get("X-Correlation-ID")
+        cid = get_or_create_correlation_id(hdr)
+        g.correlation_id = cid
+        correlation_id_var.set(cid)
+
+    @app.after_request
+    def _echo_correlation_id(response: Response) -> Response:
+        cid = getattr(g, "correlation_id", None)
+        if cid:
+            response.headers["X-Request-ID"] = str(cid)
+        return response
+
     # GitLab integration: read env vars for remote skill sync
-    import os
     gitlab_repo_url: str = os.environ.get("GITLAB_REPO_URL", "")
     gitlab_branch: str = os.environ.get("GITLAB_BRANCH", "main")
     resolved_skill_path: str = skill_path or os.environ.get("SKILLS_PATH", "./dev-skills")
@@ -228,6 +255,11 @@ def create_app(
         ]
         return jsonify(skill_list), 200
 
+    @app.route("/health", methods=["GET"])
+    def health() -> Any:
+        """Liveness probe: process up; does not call external LLM."""
+        return jsonify({"status": "ok"}), 200
+
     @app.route("/", methods=["GET"])
     def web_home():
         """Serve the web UI home page for Phase 2 (Option B)."""
@@ -275,12 +307,16 @@ def create_app(
             skill_name=skill_name,
             file_name=uploaded_file_name,
             file_bytes=uploaded_file_bytes,
+            input_params=input_params,
         )
 
         log.info(
-            "analyze request: skill=%s mode=%s file=%s input_len=%d",
-            skill_name, tool_run["mode"],
-            uploaded_file_name or "none", len(user_input)
+            "analyze request: skill=%s mode=%s file=%s input_params_keys=%s input_len=%d",
+            skill_name,
+            tool_run["mode"],
+            uploaded_file_name or "none",
+            sorted(input_params.keys()) if input_params else [],
+            len(user_input),
         )
 
         prompt = build_prompt(skill_content, user_input, tool_run, uploaded_log_text, input_params)
@@ -299,8 +335,10 @@ def create_app(
     @app.route("/api/analyze/stream", methods=["POST"])
     def analyze_stream():
         """
-        Endpoint to analyze user input with Server-Sent Events (SSE) streaming.
-        Streams the AI response in real-time to the client.
+        Endpoint to analyze user input with Server-Sent Events (SSE).
+
+        The LLM result is returned as a **single** ``data:`` event after the model
+        completes (not token-by-token streaming). See README for details.
         
         Expected payload:
             {
@@ -338,6 +376,7 @@ def create_app(
             skill_name=skill_name,
             file_name=uploaded_file_name,
             file_bytes=uploaded_file_bytes,
+            input_params=input_params,
         )
 
         prompt = build_prompt(skill_content, user_input, tool_run, uploaded_log_text, input_params)

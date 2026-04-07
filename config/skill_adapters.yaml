@@ -7,9 +7,34 @@ skills:
         - "${IMS2_TOOL_PATH}"
         - "{IMS2_BIN_DIR}/ims2_tool"
         - ims2_tool
-      args_template:
-        - --input
-        - "{log_file_path}"
-        - analyzer
+      mode_param: analysis_mode
+      args_by_mode:
+        topology:
+          - --input
+          - "{log_file_path}"
+          - --quiet-status
+          - analyzer
+        state:
+          - --input
+          - "{log_file_path}"
+          - --quiet-status
+          - query
+          - -r
+          - "{focus_object}"
+          - -m
+          - last
+        transitions:
+          - --input
+          - "{log_file_path}"
+          - --quiet-status
+          - walk
+          - -r
+          - "{focus_object}"
+          - -c
+        metadata:
+          - --input
+          - "{log_file_path}"
+          - --quiet-status
+          - ims2
       timeout_sec: 90
     fallback: llm-only

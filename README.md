@@ -79,6 +79,7 @@ skillFlow/
 | `GITLAB_BRANCH` | `main` | Branch to clone/pull from when `GITLAB_REPO_URL` is set. |
 | `GITLAB_TOKEN` | *(empty)* | GitLab personal access token (PAT) for private repos. Injected as `oauth2:<token>@` in the clone URL — never logged. |
 | `SKILLS_PATH` | `./dev-skills` | Local path to skill definitions; overridden by `GITLAB_REPO_URL` if set. |
+| `SKILLFLOW_LOG_LEVEL` | `INFO` | Root log level for `skillflow.*` loggers (`DEBUG`, `INFO`, `WARNING`, …). |
 
 ### Git Configuration (Intranet Proxy)
 
@@ -208,7 +209,12 @@ See `AGENTS.md` for project constraints and best practices:
 - [x] **Phase 1**: Flask REST API backends (`/api/skills`, `/api/analyze`, `/api/analyze/stream`).
 - [x] **Phase 2**: Web UI with skill explorer, search, file upload, terminal display.
 - [x] **Phase 3**: Dynamic forms from SKILL.md metadata; adapter-driven tool execution.
-- [ ] **Phase 4**: Docker containerization, HTTPS/TLS, Nokia SSO auth, structured logging.
+- [x] **Phase 4a**: Docker containerization (Dockerfile, docker-compose); structured logging to stdout; request correlation id; `GET /health`; `SKILLFLOW_LOG_LEVEL`.
+- [ ] **Phase 4b** (later): HTTPS/TLS termination at reverse proxy, Nokia SSO for web access.
+
+### Streaming API note
+
+`POST /api/analyze/stream` returns **Server-Sent Events**, but the LLM response is sent as **one complete `chunk` event** after the model finishes (not token-by-token streaming). The main UI uses synchronous `POST /api/analyze`.
 
 ## Support
 

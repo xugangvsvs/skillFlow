@@ -23,9 +23,9 @@ COPY dev-skills/ dev-skills/
 COPY config/ config/
 COPY web/ web/
 
-# Health check: verify Flask endpoint is responsive
+# Health check: lightweight liveness (does not scan skills or call LLM)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:5000/api/skills')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=5).read()" || exit 1
 
 # Expose web server port
 EXPOSE 5000

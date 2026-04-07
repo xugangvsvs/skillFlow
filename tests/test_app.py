@@ -6,15 +6,6 @@ from unittest.mock import patch
 from src.app import create_app
 
 
-@pytest.fixture
-def client():
-    """Create a test client for the Flask app."""
-    app = create_app()
-    app.config["TESTING"] = True
-    with app.test_client() as client:
-        yield client
-
-
 def test_get_skills(client):
     """Test that /api/skills returns a list of available skills."""
     response = client.get("/api/skills")
@@ -291,3 +282,55 @@ def test_analyze_includes_dynamic_input_params_in_prompt(client):
     assert "Input parameters" in sent_prompt
     assert "analysis_mode: topology" in sent_prompt
     assert "focus_object: RMOD_L-1" in sent_prompt
+
+
+def test_analyze_passes_input_params_to_skill_runner(client):
+    """Tool-first path must receive form/json input_params for adapter arg templates."""
+    with patch("src.app.CopilotExecutor.ask_ai", return_value="ok"), patch(
+        "src.app.SkillRunner.run_tool_if_configured",
+        return_value={
+            "mode": "fallback",
+            "reason": "no_adapter",
+            "tool_output": "",
+            "note": "No adapter configured",
+        },
+    ) as mock_run:
+        client.post(
+            "/api/analyze",
+            json={
+                "skill_name": "analyze-ims2",
+                "user_input": "inspect",
+                "input_params": {"analysis_mode": "state", "focus_object": "RMOD-1"},
+            },
+            content_type="application/json",
+        )
+    mock_run.assert_called_once_with(
+        skill_name="analyze-ims2",
+        file_name="",
+        file_bytes=b"",
+        input_params={"analysis_mode": "state", "focus_object": "RMOD-1"},
+    )
+
+
+def test_analyze_stream_emits_single_sse_data_event(client):
+    """Contract: one SSE data line with full LLM text (not token streaming)."""
+    with patch("src.app.CopilotExecutor.ask_ai", return_value="complete answer"), patch(
+        "src.app.SkillRunner.run_tool_if_configured",
+        return_value={
+            "mode": "fallback",
+            "reason": "no_adapter",
+            "tool_output": "",
+            "note": "No adapter configured",
+        },
+    ):
+        response = client.post(
+            "/api/analyze/stream",
+            json={"skill_name": "analyze-ims2", "user_input": "q"},
+            content_type="application/json",
+        )
+    assert response.status_code == 200
+    text = response.get_data(as_text=True)
+    data_lines = [ln for ln in text.split("\n") if ln.startswith("data: ")]
+    assert len(data_lines) == 1
+    payload = json.loads(data_lines[0][6:])
+    assert payload["chunk"] == "complete answer"

@@ -8,7 +8,7 @@ This file is the tool-agnostic rule source for AI coding assistants in this repo
 - Test files are under `tests/`.
 - Skill definitions are under `dev-skills/` (sourced from GitLab in production).
 - The AI backend is the Nokia internal LLM API (`hzllmapi.dyn.nesc.nokia.net:8080/v1/chat/completions`), model `qwen/qwen3-32b`. No external API key required.
-- Long-term goal: evolve from CLI tool into a Web-based AI assistant with four core modules (see Architecture below).
+- Primary user-facing entry: **Flask web app** (`python -m src.app`, `src/app.py`) with static UI under `web/`. The CLI in `src/main.py` remains for scripting and quick checks.
 
 ## Architecture
 
@@ -16,15 +16,15 @@ The system is composed of four modules:
 
 ### A. Skill Discovery & Sync — "The Scout"
 - Crawls `dev-skills/` (or GitLab repo) for directories containing `SKILL.md`.
-- Parses YAML front-matter: id, name, description, keywords, input parameters.
+- Parses YAML front-matter: **name** (required for API `skill_name`; must match `config/skill_adapters.yaml` keys when using tools), optional **id**, description, keywords, input parameters.
 - Caches parsed skill list in memory (or DB) for fast query.
 - Module boundary: `src/scanner.py`
 
 ### B. Dynamic UI Rendering — "The Face"
 - Skill Explorer: displays all available skill cards.
 - Auto-Form: generates input fields from `SKILL.md` parameter definitions.
-- Stream Terminal: real-time progress display (dark terminal style).
-- Module boundary: future `web/` layer; currently CLI in `src/main.py`.
+- Stream Terminal: response / progress display (dark terminal style in `web/index.html`).
+- Module boundary: `web/index.html` (static) + REST in `src/app.py`.
 
 ### C. Core Execution Engine — "The Brain"
 - Prompt Wrapper: combines SKILL.md rules + user log input + internal context into a single AI prompt.

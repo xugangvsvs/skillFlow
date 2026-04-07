@@ -15,7 +15,7 @@
 
 ## Target Architecture Modules
 - **A. Scout** (`src/scanner.py`): Skill discovery, YAML parsing, local cache.
-- **B. Face** (future `web/`): Skill explorer UI, auto-generated input forms, stream terminal.
+- **B. Face** (`web/index.html` + `src/app.py` REST): Skill explorer UI, auto-generated input forms, stream terminal.
 - **C. Brain** (`src/executor.py`): Prompt builder, HTTP call to Nokia LLM API (`qwen/qwen3-32b`), result extractor.
 - **D. Guard** (env/auth layer): LLM API reachability check, Nokia SSO for web access, no hardcoded secrets.
 
@@ -25,8 +25,8 @@
 - [x] Create Flask app with `/api/skills` endpoint (GET)
 - [x] Create `/api/analyze` endpoint (POST) for synchronous AI calls
 - [x] Create `/api/analyze/stream` endpoint (POST) for SSE streaming (placeholder)
-- [ ] Write comprehensive unit tests for API endpoints
-- [ ] Test locally with curl or Postman
+- [x] Unit tests for API endpoints (`tests/test_app.py` and related)
+- [x] `GET /health` liveness endpoint
 
 ### Phase 2: Frontend (Vue 3 + Element Plus)
 - [x] Option B kickoff: Flask-served web entry page (`web/index.html`)
@@ -46,15 +46,16 @@
 
 ### Phase 4: Deployment & Polish
 - [x] Docker containerization (Dockerfile, docker-compose.yml, README)
-- [ ] HTTPS/TLS for production
+- [x] Baseline logging to stdout; correlation id on requests; `SKILLFLOW_LOG_LEVEL`; `GET /health`
+- [ ] HTTPS/TLS for production (typically at reverse proxy)
 - [ ] Authentication & SSO (future)
-- [ ] Logging & monitoring
 
 ## Backlog
 - [ ] Add config file for repo path and runtime options.
 - [ ] Add optional multilingual CLI text mode.
-- [ ] Add structured logging mode for debugging.
+- [ ] Token-level LLM streaming for `/api/analyze/stream` (optional; current SSE sends one complete chunk).
 
 ## Notes
 - Keep this file for evolving priorities.
 - Keep stable coding rules in `AGENTS.md`.
+- Historical logging change log: see `LOGGING_CHANGES.md` (optional; not required reading for milestones).

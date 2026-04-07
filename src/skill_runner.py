@@ -11,6 +11,55 @@ import yaml
 log = logging.getLogger("skillflow.skill_runner")
 
 
+def _substitution_map(
+    tmp_path: str,
+    file_name: str,
+    input_params: Optional[Dict[str, Any]],
+) -> Dict[str, str]:
+    """Build placeholder map for args_template / args_by_mode (plus safe defaults)."""
+    merged: Dict[str, str] = {
+        "log_file_path": tmp_path,
+        "file_name": file_name or os.path.basename(tmp_path),
+    }
+    if input_params:
+        for key, value in input_params.items():
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                merged[str(key)] = text
+    merged.setdefault("focus_object", ".*")
+    return merged
+
+
+def _select_args_list(tool_cfg: Dict[str, Any], input_params: Optional[Dict[str, Any]]) -> List[Any]:
+    """Pick argument template list: args_by_mode[analysis_mode] or legacy args_template."""
+    args_by_mode = tool_cfg.get("args_by_mode")
+    mode_param = str(tool_cfg.get("mode_param") or "analysis_mode")
+    if isinstance(args_by_mode, dict) and args_by_mode:
+        mode_raw = (input_params or {}).get(mode_param)
+        mode = str(mode_raw).strip() if mode_raw is not None else ""
+        if mode not in args_by_mode:
+            for candidate in ("topology", "state", "transitions", "metadata"):
+                if candidate in args_by_mode:
+                    mode = candidate
+                    break
+            else:
+                mode = next(iter(args_by_mode))
+        return list(args_by_mode[mode])
+    return list(tool_cfg.get("args_template") or [])
+
+
+def _format_arg_list(args_list: List[Any], merged: Dict[str, str]) -> List[str]:
+    formatted: List[str] = []
+    for arg in args_list:
+        s = str(arg)
+        for key, value in merged.items():
+            s = s.replace("{" + key + "}", value)
+        formatted.append(s)
+    return formatted
+
+
 class SkillRunner:
     """Adapter-driven tool execution layer for tool-first skills."""
 
@@ -117,6 +166,7 @@ class SkillRunner:
         skill_name: str,
         file_name: str = "",
         file_bytes: Optional[bytes] = None,
+        input_params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, str]:
         """
         Try tool-first execution when adapter declares it.
@@ -141,7 +191,6 @@ class SkillRunner:
 
         tool_cfg = adapter.get("tool") or {}
         command = self._resolve_tool_command(tool_cfg)
-        args_template = tool_cfg.get("args_template") or []
         timeout_sec = int(tool_cfg.get("timeout_sec") or 90)
 
         if not command:
@@ -158,18 +207,15 @@ class SkillRunner:
             return {"mode": "fallback", "reason": "no_file", "tool_output": "", "note": "No uploaded file provided for tool-first mode"}
 
         suffix = os.path.splitext(file_name)[1] if file_name else ".log"
-        tmp_file = None
+        tmp_path = ""
         try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-                tmp_file.write(file_bytes)
-                tmp_path = tmp_file.name
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                tmp.write(file_bytes)
+                tmp_path = tmp.name
 
-            args = [
-                str(arg)
-                .replace("{log_file_path}", tmp_path)
-                .replace("{file_name}", file_name or os.path.basename(tmp_path))
-                for arg in args_template
-            ]
+            args_list = _select_args_list(tool_cfg, input_params)
+            merged = _substitution_map(tmp_path, file_name, input_params)
+            args = _format_arg_list(args_list, merged)
             cmd = [command] + args
 
             tool_cwd = os.path.dirname(command) or None
@@ -209,8 +255,8 @@ class SkillRunner:
             log.warning("Tool execution error: skill=%s error=%s", skill_name, exc)
             return {"mode": "fallback", "reason": "tool_error", "tool_output": "", "note": f"Tool execution error: {exc}"}
         finally:
-            if tmp_file is not None:
+            if tmp_path:
                 try:
-                    os.unlink(tmp_file.name)
+                    os.unlink(tmp_path)
                 except OSError:
                     pass
