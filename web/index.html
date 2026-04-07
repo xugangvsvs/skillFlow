@@ -55,6 +55,49 @@
       border-bottom: 1px solid var(--line);
     }
 
+    .tabs {
+      display: flex;
+      gap: 6px;
+      padding: 8px 8px 0;
+      background: linear-gradient(90deg, #eef7ee, #fef7df);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .tab {
+      flex: 1;
+      padding: 8px 10px;
+      border: 1px solid transparent;
+      border-radius: 8px 8px 0 0;
+      background: transparent;
+      cursor: pointer;
+      font: inherit;
+      color: var(--muted);
+    }
+
+    .tab:hover {
+      color: var(--ink);
+    }
+
+    .tab.active {
+      background: #fffdf7;
+      border-color: var(--line);
+      border-bottom-color: #fffdf7;
+      color: var(--ink);
+      font-weight: 600;
+      margin-bottom: -1px;
+    }
+
+    .skill-item.unavailable {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .skill-item.unavailable:hover,
+    .skill-item.unavailable.active {
+      border-color: var(--line);
+      background: #fff;
+    }
+
     #skill-list {
       list-style: none;
       margin: 0;
@@ -220,7 +263,11 @@
   <div id="app" class="shell">
     <section class="card">
       <h2>SkillFlow Web Assistant</h2>
-      <input id="skill-search" type="text" placeholder="Search skills...">
+      <div class="tabs" role="tablist">
+        <button type="button" class="tab active" id="tab-skills" role="tab" aria-selected="true">Skills</button>
+        <button type="button" class="tab" id="tab-usecases" role="tab" aria-selected="false">Use cases</button>
+      </div>
+      <input id="skill-search" type="text" placeholder="Search skills..." aria-label="Filter list">
       <ul id="skill-list">
         <li class="note">Loading skills...</li>
       </ul>
@@ -228,7 +275,7 @@
 
     <section class="main">
       <div class="card toolbar">
-        <p id="selected-skill">Selected skill: none</p>
+        <p id="selected-skill">Selected: none</p>
         <div id="dynamic-inputs"></div>
         <textarea id="analysis-input" placeholder="Enter logs or analysis request..."></textarea>
         <input id="log-file" type="file" accept=".log,.txt,.md,.json,.xml,.csv">
@@ -240,7 +287,7 @@
 
       <div class="card">
         <h2>Stream Terminal</h2>
-        <pre id="terminal-output">[System] Ready. Select a skill and submit a request.</pre>
+        <pre id="terminal-output">[System] Ready. Select a skill or use case, then submit a request.</pre>
       </div>
     </section>
   </div>
@@ -256,9 +303,14 @@
       const analyzeBtnEl = document.getElementById("analyze-btn");
       const statusTextEl = document.getElementById("status-text");
       const terminalEl = document.getElementById("terminal-output");
+      const tabSkillsEl = document.getElementById("tab-skills");
+      const tabUcEl = document.getElementById("tab-usecases");
 
+      let browseMode = "skills";
       let selectedSkillName = "";
+      let selectedUseCaseId = "";
       let allSkills = [];
+      let allUseCases = [];
 
       function appendTerminal(text, isError) {
         const line = isError ? "[Error] " + text : text;
@@ -269,34 +321,6 @@
       function setBusy(isBusy) {
         analyzeBtnEl.disabled = isBusy;
         statusTextEl.textContent = isBusy ? "Analyzing..." : "Idle";
-      }
-
-      function renderSkills(skills) {
-        skillListEl.innerHTML = "";
-        if (!skills.length) {
-          skillListEl.innerHTML = "<li class='note'>No matching skills.</li>";
-          return;
-        }
-        skills.forEach((skill, index) => {
-          const li = document.createElement("li");
-          li.className = "skill-item";
-          li.innerHTML = "<strong>" + (skill.name || "(unnamed)") + "</strong>" +
-            "<small>" + (skill.description || "No description") + "</small>";
-          li.addEventListener("click", function () {
-            Array.from(skillListEl.children).forEach(el => el.classList.remove("active"));
-            li.classList.add("active");
-            selectedSkillName = skill.name || "";
-            selectedSkillEl.textContent = "Selected skill: " + selectedSkillName;
-            renderDynamicInputs(skill.inputs || []);
-          });
-          if (index === 0 && skill.name && !selectedSkillName) {
-            li.classList.add("active");
-            selectedSkillName = skill.name;
-            selectedSkillEl.textContent = "Selected skill: " + selectedSkillName;
-            renderDynamicInputs(skill.inputs || []);
-          }
-          skillListEl.appendChild(li);
-        });
       }
 
       function renderDynamicInputs(inputs) {
@@ -364,40 +388,169 @@
         });
       }
 
-      function filterSkills() {
-        const keyword = skillSearchEl.value.trim().toLowerCase();
-        if (!keyword) {
-          renderSkills(allSkills);
+      function renderSkills(skills) {
+        skillListEl.innerHTML = "";
+        selectedSkillName = "";
+        if (!skills.length) {
+          skillListEl.innerHTML = "<li class='note'>No matching skills.</li>";
+          selectedSkillEl.textContent = "Selected: none";
+          renderDynamicInputs([]);
           return;
         }
-        const filtered = allSkills.filter(skill => {
-          const name = (skill.name || "").toLowerCase();
-          const desc = (skill.description || "").toLowerCase();
-          return name.includes(keyword) || desc.includes(keyword);
+        skills.forEach((skill, index) => {
+          const li = document.createElement("li");
+          li.className = "skill-item";
+          li.innerHTML = "<strong>" + (skill.name || "(unnamed)") + "</strong>" +
+            "<small>" + (skill.description || "No description") + "</small>";
+          li.addEventListener("click", function () {
+            Array.from(skillListEl.children).forEach(el => el.classList.remove("active"));
+            li.classList.add("active");
+            selectedSkillName = skill.name || "";
+            selectedSkillEl.textContent = "Selected skill: " + selectedSkillName;
+            renderDynamicInputs(skill.inputs || []);
+          });
+          if (index === 0 && skill.name) {
+            li.classList.add("active");
+            selectedSkillName = skill.name;
+            selectedSkillEl.textContent = "Selected skill: " + selectedSkillName;
+            renderDynamicInputs(skill.inputs || []);
+          }
+          skillListEl.appendChild(li);
         });
-        renderSkills(filtered);
       }
 
-      async function loadSkills() {
-        try {
-          const response = await fetch("/api/skills");
-          const data = await response.json();
-          if (!Array.isArray(data) || data.length === 0) {
-            skillListEl.innerHTML = "<li class='note'>No skills found.</li>";
+      function renderUseCases(useCases) {
+        skillListEl.innerHTML = "";
+        selectedUseCaseId = "";
+        if (!useCases.length) {
+          skillListEl.innerHTML = "<li class='note'>No use cases configured.</li>";
+          selectedSkillEl.textContent = "Selected: none";
+          renderDynamicInputs([]);
+          return;
+        }
+        let picked = false;
+        useCases.forEach((uc, index) => {
+          const li = document.createElement("li");
+          const avail = uc.available !== false;
+          li.className = "skill-item" + (avail ? "" : " unavailable");
+          li.innerHTML = "<strong>" + (uc.title || uc.id || "(untitled)") + "</strong>" +
+            "<small>" + (uc.description || uc.id || "") + "</small>";
+          li.addEventListener("click", function () {
+            if (!avail) {
+              appendTerminal("This use case is unavailable (underlying skill not loaded). Configure use_cases.yaml and skills.", true);
+              return;
+            }
+            Array.from(skillListEl.children).forEach(el => el.classList.remove("active"));
+            li.classList.add("active");
+            selectedUseCaseId = uc.id || "";
+            selectedSkillEl.textContent = "Selected use case: " + (uc.title || selectedUseCaseId);
+            renderDynamicInputs(uc.inputs || []);
+          });
+          if (!picked && avail && uc.id) {
+            li.classList.add("active");
+            selectedUseCaseId = uc.id;
+            selectedSkillEl.textContent = "Selected use case: " + (uc.title || selectedUseCaseId);
+            renderDynamicInputs(uc.inputs || []);
+            picked = true;
+          }
+          skillListEl.appendChild(li);
+        });
+        if (!picked) {
+          selectedSkillEl.textContent = "Selected: none (no available use cases)";
+          renderDynamicInputs([]);
+        }
+      }
+
+      function setBrowseMode(mode) {
+        browseMode = mode;
+        tabSkillsEl.classList.toggle("active", mode === "skills");
+        tabUcEl.classList.toggle("active", mode === "usecases");
+        tabSkillsEl.setAttribute("aria-selected", mode === "skills" ? "true" : "false");
+        tabUcEl.setAttribute("aria-selected", mode === "usecases" ? "true" : "false");
+        skillSearchEl.placeholder = mode === "skills" ? "Search skills..." : "Search use cases...";
+        skillSearchEl.value = "";
+        if (mode === "skills") {
+          renderSkills(allSkills);
+        } else {
+          renderUseCases(allUseCases);
+        }
+      }
+
+      function filterList() {
+        const keyword = skillSearchEl.value.trim().toLowerCase();
+        if (browseMode === "skills") {
+          if (!keyword) {
+            renderSkills(allSkills);
             return;
           }
-          allSkills = data;
-          selectedSkillName = "";
-          renderSkills(allSkills);
+          const filtered = allSkills.filter(skill => {
+            const name = (skill.name || "").toLowerCase();
+            const desc = (skill.description || "").toLowerCase();
+            return name.includes(keyword) || desc.includes(keyword);
+          });
+          renderSkills(filtered);
+          return;
+        }
+        if (!keyword) {
+          renderUseCases(allUseCases);
+          return;
+        }
+        const filtered = allUseCases.filter(uc => {
+          const title = (uc.title || "").toLowerCase();
+          const desc = (uc.description || "").toLowerCase();
+          const id = (uc.id || "").toLowerCase();
+          return title.includes(keyword) || desc.includes(keyword) || id.includes(keyword);
+        });
+        renderUseCases(filtered);
+      }
+
+      async function loadAll() {
+        let skillsOk = false;
+        let ucOk = false;
+        try {
+          const resSkills = await fetch("/api/skills");
+          const dataSkills = await resSkills.json();
+          if (Array.isArray(dataSkills) && dataSkills.length > 0) {
+            allSkills = dataSkills;
+            skillsOk = true;
+          } else {
+            allSkills = [];
+            skillListEl.innerHTML = "<li class='note'>No skills found.</li>";
+          }
         } catch (error) {
           skillListEl.innerHTML = "<li class='note'>Failed to load skills.</li>";
           appendTerminal("Failed to load skills: " + error.message, true);
+        }
+        try {
+          const resUc = await fetch("/api/use-cases");
+          const dataUc = await resUc.json();
+          if (Array.isArray(dataUc)) {
+            allUseCases = dataUc;
+            ucOk = true;
+          } else {
+            allUseCases = [];
+          }
+        } catch (error) {
+          appendTerminal("Failed to load use cases: " + error.message, true);
+          allUseCases = [];
+        }
+        if (browseMode === "skills" && skillsOk) {
+          renderSkills(allSkills);
+        } else if (browseMode === "usecases" && ucOk) {
+          renderUseCases(allUseCases);
+        } else if (browseMode === "skills" && !skillsOk) {
+          selectedSkillEl.textContent = "Selected: none";
         }
       }
 
       async function analyze() {
         const userInput = analysisInputEl.value.trim();
-        if (!selectedSkillName) {
+        if (browseMode === "usecases") {
+          if (!selectedUseCaseId) {
+            appendTerminal("Please select a use case first.", true);
+            return;
+          }
+        } else if (!selectedSkillName) {
           appendTerminal("Please select a skill first.", true);
           return;
         }
@@ -407,7 +560,11 @@
         }
 
         setBusy(true);
-        appendTerminal("[System] Submitting request for skill: " + selectedSkillName);
+        if (browseMode === "usecases") {
+          appendTerminal("[System] Submitting request for use case: " + selectedUseCaseId);
+        } else {
+          appendTerminal("[System] Submitting request for skill: " + selectedSkillName);
+        }
 
         const selectedFile = logFileEl.files && logFileEl.files.length ? logFileEl.files[0] : null;
         const inputParams = {};
@@ -441,7 +598,11 @@
 
         try {
           const formData = new FormData();
-          formData.append("skill_name", selectedSkillName);
+          if (browseMode === "usecases") {
+            formData.append("use_case_id", selectedUseCaseId);
+          } else {
+            formData.append("skill_name", selectedSkillName);
+          }
           formData.append("user_input", userInput);
           formData.append("input_params", JSON.stringify(inputParams));
           if (effectiveFile) {
@@ -472,9 +633,11 @@
         }
       }
 
+      tabSkillsEl.addEventListener("click", function () { setBrowseMode("skills"); });
+      tabUcEl.addEventListener("click", function () { setBrowseMode("usecases"); });
       analyzeBtnEl.addEventListener("click", analyze);
-      skillSearchEl.addEventListener("input", filterSkills);
-      loadSkills();
+      skillSearchEl.addEventListener("input", filterList);
+      loadAll();
     })();
   </script>
 </body>

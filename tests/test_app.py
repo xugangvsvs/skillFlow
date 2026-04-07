@@ -5,6 +5,26 @@ from pathlib import Path
 from unittest.mock import patch
 from src.app import create_app
 
+USE_CASES_EXAMPLE_YAML = Path(__file__).resolve().parent.parent / "config" / "use_cases.example.yaml"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture
+def client_example_uc_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Stable use-case catalog; avoid GitLab sync if GITLAB_REPO_URL is set on the host."""
+    cfg = tmp_path / "skillflow-test.yaml"
+    cfg.write_text("log_level: INFO\n", encoding="utf-8")
+    monkeypatch.setenv("SKILLFLOW_CONFIG", str(cfg))
+    monkeypatch.delenv("GITLAB_REPO_URL", raising=False)
+    monkeypatch.delenv("GITLAB_TOKEN", raising=False)
+    app = create_app(
+        skill_path=str(REPO_ROOT / "dev-skills"),
+        use_cases_path=str(USE_CASES_EXAMPLE_YAML),
+    )
+    app.config["TESTING"] = True
+    with app.test_client() as tc:
+        yield tc
+
 
 def test_get_skills(client):
     """Test that /api/skills returns a list of available skills."""
@@ -21,7 +41,14 @@ def test_get_skills(client):
         assert "inputs" in data[0]
 
 
-def test_get_skills_exposes_inputs_metadata_from_front_matter(tmp_path: Path):
+def test_get_skills_exposes_inputs_metadata_from_front_matter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    sf = tmp_path / "skillflow-test.yaml"
+    sf.write_text("log_level: INFO\n", encoding="utf-8")
+    monkeypatch.setenv("SKILLFLOW_CONFIG", str(sf))
+    monkeypatch.delenv("GITLAB_REPO_URL", raising=False)
+
     skill_dir = tmp_path / "demo-skill"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(
@@ -92,13 +119,15 @@ def test_analyze_with_invalid_skill(client):
 
 def test_analyze_missing_payload(client):
     """Test POST /api/analyze with missing required fields."""
-    payload = {"user_input": "test"}  # Missing skill_name
+    payload = {"user_input": "test"}  # Missing skill_name and use_case_id
     response = client.post(
         "/api/analyze",
         data=json.dumps(payload),
         content_type="application/json"
     )
     assert response.status_code == 400
+    err = response.get_json().get("error", "")
+    assert "use_case_id" in err and "skill_name" in err
 
 
 def test_web_home_page_available(client):
@@ -117,6 +146,7 @@ def test_web_home_page_contains_core_sections(client):
     assert "id=\"skill-list\"" in html
     assert "id=\"analysis-input\"" in html
     assert "id=\"terminal-output\"" in html
+    assert "id=\"tab-usecases\"" in html
 
 
 def test_web_home_page_contains_search_and_file_upload(client):
@@ -312,6 +342,105 @@ def test_analyze_passes_input_params_to_skill_runner(client):
     )
 
 
+def test_get_use_cases(client_example_uc_yaml):
+    """GET /api/use-cases returns catalog from use_cases.example.yaml by default."""
+    response = client_example_uc_yaml.get("/api/use-cases")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert isinstance(data, list)
+    entry = next((x for x in data if x.get("id") == "analyze-ims2-snapshot"), None)
+    assert entry is not None
+    assert entry.get("available") is True
+    assert isinstance(entry.get("inputs"), list)
+    assert "title" in entry
+
+
+def test_analyze_with_use_case_id(client_example_uc_yaml):
+    with patch("src.app.CopilotExecutor.ask_ai", return_value="ok") as mock_ask, patch(
+        "src.app.SkillRunner.run_tool_if_configured",
+        return_value={
+            "mode": "fallback",
+            "reason": "no_adapter",
+            "tool_output": "",
+            "note": "No adapter configured",
+        },
+    ) as mock_run:
+        response = client_example_uc_yaml.post(
+            "/api/analyze",
+            json={
+                "use_case_id": "analyze-ims2-snapshot",
+                "user_input": "check snapshot",
+            },
+            content_type="application/json",
+        )
+    assert response.status_code == 200
+    mock_run.assert_called_once()
+    _args, kwargs = mock_run.call_args
+    assert kwargs["skill_name"] == "analyze-ims2"
+    mock_ask.assert_called_once()
+
+
+def test_analyze_use_case_id_and_skill_name_rejected(client_example_uc_yaml):
+    response = client_example_uc_yaml.post(
+        "/api/analyze",
+        json={
+            "use_case_id": "analyze-ims2-snapshot",
+            "skill_name": "analyze-ims2",
+            "user_input": "x",
+        },
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    assert "not both" in response.get_json().get("error", "").lower()
+
+
+def test_analyze_unknown_use_case_id(client_example_uc_yaml):
+    response = client_example_uc_yaml.post(
+        "/api/analyze",
+        json={"use_case_id": "does-not-exist", "user_input": "x"},
+        content_type="application/json",
+    )
+    assert response.status_code == 404
+
+
+def test_analyze_use_case_prompt_prefix_in_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    sf = tmp_path / "skillflow-test.yaml"
+    sf.write_text("log_level: INFO\n", encoding="utf-8")
+    monkeypatch.setenv("SKILLFLOW_CONFIG", str(sf))
+    monkeypatch.delenv("GITLAB_REPO_URL", raising=False)
+    uc_file = tmp_path / "uc.yaml"
+    uc_file.write_text(
+        "use_cases:\n"
+        "  - id: prefixed-uc\n"
+        "    title: Prefixed\n"
+        "    skill_name: analyze-ims2\n"
+        "    prompt_prefix: 'LINE_FROM_USE_CASE_CONFIG'\n",
+        encoding="utf-8",
+    )
+    app = create_app(skill_path=str(REPO_ROOT / "dev-skills"), use_cases_path=str(uc_file))
+    app.config["TESTING"] = True
+    with app.test_client() as client, patch(
+        "src.app.CopilotExecutor.ask_ai", return_value="ok"
+    ) as mock_ask, patch(
+        "src.app.SkillRunner.run_tool_if_configured",
+        return_value={
+            "mode": "fallback",
+            "reason": "no_adapter",
+            "tool_output": "",
+            "note": "No adapter configured",
+        },
+    ):
+        response = client.post(
+            "/api/analyze",
+            json={"use_case_id": "prefixed-uc", "user_input": "user line"},
+            content_type="application/json",
+        )
+    assert response.status_code == 200
+    sent = mock_ask.call_args[0][0]
+    assert "LINE_FROM_USE_CASE_CONFIG" in sent
+    assert "user line" in sent
+
+
 def test_analyze_stream_emits_single_sse_data_event(client):
     """Contract: one SSE data line with full LLM text (not token streaming)."""
     with patch("src.app.CopilotExecutor.ask_ai", return_value="complete answer"), patch(
@@ -334,3 +463,26 @@ def test_analyze_stream_emits_single_sse_data_event(client):
     assert len(data_lines) == 1
     payload = json.loads(data_lines[0][6:])
     assert payload["chunk"] == "complete answer"
+
+
+def test_analyze_stream_accepts_use_case_id(client_example_uc_yaml):
+    with patch("src.app.CopilotExecutor.ask_ai", return_value="streamed via uc"), patch(
+        "src.app.SkillRunner.run_tool_if_configured",
+        return_value={
+            "mode": "fallback",
+            "reason": "no_adapter",
+            "tool_output": "",
+            "note": "No adapter configured",
+        },
+    ):
+        response = client_example_uc_yaml.post(
+            "/api/analyze/stream",
+            json={"use_case_id": "analyze-ims2-snapshot", "user_input": "q"},
+            content_type="application/json",
+        )
+    assert response.status_code == 200
+    text = response.get_data(as_text=True)
+    data_lines = [ln for ln in text.split("\n") if ln.startswith("data: ")]
+    assert len(data_lines) == 1
+    payload = json.loads(data_lines[0][6:])
+    assert payload["chunk"] == "streamed via uc"

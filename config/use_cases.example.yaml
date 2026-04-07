@@ -1,0 +1,30 @@
+# =============================================================================
+# Use cases: business-facing scenarios that map to SKILL.md `name` values
+# (typically synced from GitLab). Copy to use_cases.yaml to customize locally;
+# config/use_cases.yaml is gitignored.
+#
+# Align `skill_name` with:
+#   - the `name` field in each skill's SKILL.md front-matter
+#   - keys in config/skill_adapters.yaml (when using tool-first execution)
+# =============================================================================
+#
+# Fields:
+#   id            — stable key for API/UI (e.g. use_case_id in POST /api/analyze)
+#   title         — short label shown in the Use cases tab
+#   description   — optional subtitle / help text
+#   skill_name    — underlying skill `name` from SKILL.md
+#   prompt_prefix — optional; prepended to user_input server-side (trusted config only)
+#   inputs        — optional; if omitted or empty, inputs are copied from the skill
+
+use_cases:
+  - id: analyze-ims2-snapshot
+    title: Analyze IMS2 snapshot
+    description: Inspect IMS2 snapshots (topology, state, transitions, metadata) for radio investigations.
+    skill_name: analyze-ims2
+    # prompt_prefix: "Focus on fronthaul and operational state."
+
+  # Example placeholders for additional scenarios (point skill_name at real GitLab skills):
+  # - id: efs-to-pfs
+  #   title: Draft PFS from EFS
+  #   description: Generate PFS content from an EFS document.
+  #   skill_name: your-efs-pfs-skill-name

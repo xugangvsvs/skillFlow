@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from flask import Flask, g, jsonify, request, Response, send_from_directory
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -19,6 +21,7 @@ import os
 from src.logging_context import CorrelationIdFilter, correlation_id_var, get_or_create_correlation_id
 from src.skillflow_config import load_skillflow_config, pick_str
 from src.skill_paths import resolve_skill_repo_dir
+from src.use_cases import apply_use_case, load_prepared_use_cases
 
 log = logging.getLogger("skillflow.app")
 
@@ -76,6 +79,7 @@ def summarize_uploaded_log(log_text: str, max_chars: int = MAX_FALLBACK_LOG_CHAR
 def create_app(
     skill_path: str = "",
     adapter_path: str = "./config/skill_adapters.yaml",
+    use_cases_path: str = "",
 ) -> Flask:
     """
     Factory function to create and configure the Flask application.
@@ -83,6 +87,7 @@ def create_app(
     Args:
         skill_path: Path to the skills directory for discovery. When empty, see
         ``skill_paths.resolve_skill_repo_dir`` (``SKILLS_PATH``, GitLab cache, or ``dev-skills``).
+        use_cases_path: Optional override for the use case YAML file (tests).
     
     Returns:
         Configured Flask app instance.
@@ -126,6 +131,9 @@ def create_app(
     skills = scanner.scan()
     executor = CopilotExecutor(api_url=llm_url, model=llm_model)
     skill_runner = SkillRunner(adapter_path=adapter_path)
+    use_cases_list, use_cases_by_id, _uc_path = load_prepared_use_cases(
+        project_root, file_cfg, skills, path_override=use_cases_path
+    )
     
     # Helper: find skill by name
     def find_skill_by_name(name: str):
@@ -180,6 +188,7 @@ def create_app(
 
     def parse_analyze_request():
         """Parse analyze payload from JSON or multipart form data."""
+        use_case_id = ""
         skill_name = ""
         user_input = ""
         input_params: Dict[str, Any] = {}
@@ -189,12 +198,14 @@ def create_app(
 
         if request.is_json:
             data = request.get_json(silent=True) or {}
+            use_case_id = (data.get("use_case_id") or "").strip()
             skill_name = (data.get("skill_name") or "").strip()
             user_input = (data.get("user_input") or "").strip()
             raw_params = data.get("input_params")
             if isinstance(raw_params, dict):
                 input_params = raw_params
             return (
+                use_case_id,
                 skill_name,
                 user_input,
                 input_params,
@@ -205,6 +216,7 @@ def create_app(
             )
 
         # Support multipart/form-data for file upload use cases.
+        use_case_id = (request.form.get("use_case_id") or "").strip()
         skill_name = (request.form.get("skill_name") or "").strip()
         user_input = (request.form.get("user_input") or "").strip()
         raw_params = request.form.get("input_params")
@@ -222,6 +234,7 @@ def create_app(
             raw_bytes = uploaded_file.read()
             if not raw_bytes:
                 return (
+                    use_case_id,
                     skill_name,
                     user_input,
                     input_params,
@@ -236,6 +249,7 @@ def create_app(
             )
 
         return (
+            use_case_id,
             skill_name,
             user_input,
             input_params,
@@ -244,7 +258,47 @@ def create_app(
             uploaded_file_bytes,
             None,
         )
-    
+
+    def resolve_analyze_target(
+        use_case_id: str,
+        skill_name: str,
+        user_input: str,
+    ) -> tuple[str, str, Optional[tuple[Any, int]]]:
+        """Return (skill_name, effective_user_input, error_pair) error_pair is (jsonify(...), status)."""
+        uc = (use_case_id or "").strip()
+        sn = (skill_name or "").strip()
+        if uc and sn:
+            return (
+                "",
+                user_input,
+                (jsonify({"error": "Send only one of use_case_id or skill_name, not both"}), 400),
+            )
+        if uc:
+            resolved_skill, effective_input, err = apply_use_case(
+                uc, user_input, use_cases_by_id
+            )
+            if err:
+                status = 404 if err.startswith("Unknown use_case_id") else 400
+                return "", user_input, (jsonify({"error": err}), status)
+            return resolved_skill, effective_input, None
+        if not sn:
+            return (
+                "",
+                user_input,
+                (
+                    jsonify(
+                        {
+                            "error": (
+                                "Missing required field: provide use_case_id or skill_name "
+                                "together with user_input"
+                            )
+                        }
+                    ),
+                    400,
+                ),
+            )
+        return sn, user_input, None
+
     @app.route("/api/skills", methods=["GET"])
     def get_skills():
         """
@@ -264,6 +318,11 @@ def create_app(
         ]
         return jsonify(skill_list), 200
 
+    @app.route("/api/use-cases", methods=["GET"])
+    def get_use_cases():
+        """List business use cases (each maps to a loaded skill by name)."""
+        return jsonify(use_cases_list), 200
+
     @app.route("/health", methods=["GET"])
     def health() -> Any:
         """Liveness probe: process up; does not call external LLM."""
@@ -277,18 +336,16 @@ def create_app(
     @app.route("/api/analyze", methods=["POST"])
     def analyze():
         """
-        Endpoint to analyze user input using a selected skill.
-        
-        Expected payload:
-            {
-                "skill_name": "analyze-ims2",
-                "user_input": "text to analyze"
-            }
-        
-        Returns:
-            JSON with analysis result or error message.
+        Endpoint to analyze user input using a selected skill or use case.
+
+        Provide exactly one of:
+            - ``skill_name`` + ``user_input``, or
+            - ``use_case_id`` + ``user_input`` (resolves to a skill; optional ``prompt_prefix`` from YAML).
+
+        Optional: ``input_params`` (dict), file field ``log_file`` (multipart).
         """
         (
+            use_case_id,
             skill_name,
             user_input,
             input_params,
@@ -301,9 +358,16 @@ def create_app(
         if request_error:
             return jsonify({"error": request_error}), 400
 
-        if not skill_name or not user_input:
-            return jsonify({"error": "Missing required fields: skill_name, user_input"}), 400
-        
+        if not user_input:
+            return jsonify({"error": "Missing required field: user_input"}), 400
+
+        skill_name, user_input, err_resp = resolve_analyze_target(
+            use_case_id, skill_name, user_input
+        )
+        if err_resp:
+            body, status = err_resp
+            return body, status
+
         # Find the skill
         skill = find_skill_by_name(skill_name)
         if not skill:
@@ -320,7 +384,8 @@ def create_app(
         )
 
         log.info(
-            "analyze request: skill=%s mode=%s file=%s input_params_keys=%s input_len=%d",
+            "analyze request: use_case_id=%s skill=%s mode=%s file=%s input_params_keys=%s input_len=%d",
+            use_case_id or "-",
             skill_name,
             tool_run["mode"],
             uploaded_file_name or "none",
@@ -349,16 +414,13 @@ def create_app(
         The LLM result is returned as a **single** ``data:`` event after the model
         completes (not token-by-token streaming). See README for details.
         
-        Expected payload:
-            {
-                "skill_name": "analyze-ims2",
-                "user_input": "text to analyze"
-            }
-        
+        Same payload rules as ``/api/analyze`` (``skill_name`` or ``use_case_id`` with ``user_input``).
+
         Returns:
             Streamed response chunks as SSE.
         """
         (
+            use_case_id,
             skill_name,
             user_input,
             input_params,
@@ -371,13 +433,20 @@ def create_app(
         if request_error:
             return jsonify({"error": request_error}), 400
 
-        if not skill_name or not user_input:
-            return jsonify({"error": "Missing required fields: skill_name, user_input"}), 400
-        
+        if not user_input:
+            return jsonify({"error": "Missing required field: user_input"}), 400
+
+        skill_name, user_input, err_resp = resolve_analyze_target(
+            use_case_id, skill_name, user_input
+        )
+        if err_resp:
+            body, status = err_resp
+            return body, status
+
         skill = find_skill_by_name(skill_name)
         if not skill:
             return jsonify({"error": f"Skill '{skill_name}' not found"}), 404
-        
+
         # Build prompt
         skill_content = skill.get("full_content", "")
 
