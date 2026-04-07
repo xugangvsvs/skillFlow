@@ -1,11 +1,22 @@
 import os
-from src.scanner import SkillScanner, match_skill
+from pathlib import Path
+
 from src.executor import CopilotExecutor
+from src.scanner import SkillScanner, match_skill
+from src.skill_paths import resolve_skill_repo_dir
+
 
 def run_app():
-    # Adjust path based on project structure
-    repo_path = "./dev-skills"
-    scanner = SkillScanner(repo_path)
+    project_root = Path(__file__).resolve().parent.parent
+    skills_dir = resolve_skill_repo_dir(project_root, "")
+    skills_dir.parent.mkdir(parents=True, exist_ok=True)
+    gitlab_url = (os.environ.get("GITLAB_REPO_URL") or "").strip() or None
+    gitlab_branch = os.environ.get("GITLAB_BRANCH", "main")
+    scanner = SkillScanner(
+        repo_path=str(skills_dir),
+        gitlab_repo_url=gitlab_url,
+        gitlab_branch=gitlab_branch,
+    )
     executor = CopilotExecutor()
 
     print("\n" + "="*50)

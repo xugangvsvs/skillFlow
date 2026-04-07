@@ -6,7 +6,7 @@ This file is the tool-agnostic rule source for AI coding assistants in this repo
 - This project is a Python-based SkillFlow tool targeting enterprise intranet use.
 - Core runtime modules are under `src/`.
 - Test files are under `tests/`.
-- Skill definitions are under `dev-skills/` (sourced from GitLab in production).
+- Skill definitions: local `dev-skills/` by default, or set `GITLAB_REPO_URL` to clone/pull from GitLab into `var/gitlab-skills` (see README).
 - The AI backend is the Nokia internal LLM API (`hzllmapi.dyn.nesc.nokia.net:8080/v1/chat/completions`), model `qwen/qwen3-32b`. No external API key required.
 - Primary user-facing entry: **Flask web app** (`python -m src.app`, `src/app.py`) with static UI under `web/`. The CLI in `src/main.py` remains for scripting and quick checks.
 

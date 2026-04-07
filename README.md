@@ -75,11 +75,34 @@ skillFlow/
 | `LLM_API_URL` | `http://hzllmapi.dyn.nesc.nokia.net:8080/v1/chat/completions` | Nokia internal LLM endpoint |
 | `LLM_MODEL` | `qwen/qwen3-32b` | LLM model name |
 | `FLASK_ENV` | `production` | Flask environment (set to `development` for debug) |
-| `GITLAB_REPO_URL` | *(empty)* | GitLab HTTPS clone URL for remote skill definitions (e.g. `https://gitlabe2.ext.net.nokia.com/boam-fh-ai/dev-skills.git`). Leave empty to use local `dev-skills/` directory. |
-| `GITLAB_BRANCH` | `main` | Branch to clone/pull from when `GITLAB_REPO_URL` is set. |
+| `GITLAB_REPO_URL` | *(empty)* | If set, skills are loaded from this GitLab repo: clone on first start, `git pull --ff-only` on each app start. Use HTTPS URL (e.g. `https://gitlab.example.com/group/dev-skills.git`). Leave empty to use only local `dev-skills/`. |
+| `GITLAB_BRANCH` | `main` | Branch to clone/pull when `GITLAB_REPO_URL` is set. |
 | `GITLAB_TOKEN` | *(empty)* | GitLab personal access token (PAT) for private repos. Injected as `oauth2:<token>@` in the clone URL — never logged. |
-| `SKILLS_PATH` | `./dev-skills` | Local path to skill definitions; overridden by `GITLAB_REPO_URL` if set. |
+| `GITLAB_SKILLS_CACHE` | *(empty)* | When `GITLAB_REPO_URL` is set: directory to clone into. Default: `<repo>/var/gitlab-skills` (avoids overwriting the bundled `dev-skills/` tree). |
+| `SKILLS_PATH` | *(see below)* | If set, **always** use this directory for skills (no GitLab sync). If unset and `GITLAB_REPO_URL` is set, uses `GITLAB_SKILLS_CACHE` or `var/gitlab-skills`. If both unset, uses `dev-skills/` under the project root. |
 | `SKILLFLOW_LOG_LEVEL` | `INFO` | Root log level for `skillflow.*` loggers (`DEBUG`, `INFO`, `WARNING`, …). |
+
+### Load skills from GitLab
+
+Skills are discovered from any `**/SKILL.md` under the resolved skills directory. To use the **real** skill repo on GitLab instead of (or in addition to) the sample tree under `dev-skills/`:
+
+1. Set `GITLAB_REPO_URL` to the HTTPS clone URL of your skills repository.
+2. For private repos, set `GITLAB_TOKEN` (PAT). It is embedded in the clone URL and never logged.
+3. Leave `SKILLS_PATH` **unset** so the app can clone/pull into the default cache: `<project_root>/var/gitlab-skills` (override with `GITLAB_SKILLS_CACHE` if needed).
+4. On each process start, SkillFlow runs `git pull --ff-only` if the cache already exists, or `git clone` on first run.
+
+If you **set `SKILLS_PATH`**, that directory is used as-is and **GitLab sync is not run** (offline / custom layout).
+
+Example (local run from the repository root):
+
+```bash
+set GITLAB_REPO_URL=https://your.gitlab.example.com/group/dev-skills.git
+set GITLAB_BRANCH=main
+set GITLAB_TOKEN=your_pat_if_private
+python -m src.app
+```
+
+With Docker Compose, define the same variables in a `.env` file or your environment; the compose file mounts `./var/gitlab-skills` so clones survive container restarts.
 
 ### Git Configuration (Intranet Proxy)
 

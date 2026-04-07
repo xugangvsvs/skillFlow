@@ -11,6 +11,10 @@ RUN pip install --no-cache-dir --user -r requirements.txt
 # Stage 2: Runtime
 FROM python:3.11-slim
 
+# git is required when GITLAB_REPO_URL is set (clone / pull skills at startup)
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Copy Python dependencies from builder

@@ -17,6 +17,7 @@ import logging
 import os
 
 from src.logging_context import CorrelationIdFilter, correlation_id_var, get_or_create_correlation_id
+from src.skill_paths import resolve_skill_repo_dir
 
 log = logging.getLogger("skillflow.app")
 
@@ -76,9 +77,8 @@ def create_app(
     Factory function to create and configure the Flask application.
     
     Args:
-        skill_path: Path to the dev-skills directory for skill discovery.
-        When empty, falls back to GITLAB_REPO_URL env var (GitLab mode) or
-        the local './dev-skills' directory.
+        skill_path: Path to the skills directory for discovery. When empty, see
+        ``skill_paths.resolve_skill_repo_dir`` (``SKILLS_PATH``, GitLab cache, or ``dev-skills``).
     
     Returns:
         Configured Flask app instance.
@@ -106,12 +106,13 @@ def create_app(
     # GitLab integration: read env vars for remote skill sync
     gitlab_repo_url: str = os.environ.get("GITLAB_REPO_URL", "")
     gitlab_branch: str = os.environ.get("GITLAB_BRANCH", "main")
-    resolved_skill_path: str = skill_path or os.environ.get("SKILLS_PATH", "./dev-skills")
+    skills_dir = resolve_skill_repo_dir(project_root, skill_path)
+    skills_dir.parent.mkdir(parents=True, exist_ok=True)
 
     # Initialize scanner and executor at app startup
     scanner = SkillScanner(
-        repo_path=resolved_skill_path,
-        gitlab_repo_url=gitlab_repo_url or None,
+        repo_path=str(skills_dir),
+        gitlab_repo_url=(gitlab_repo_url.strip() or None),
         gitlab_branch=gitlab_branch,
     )
     skills = scanner.scan()

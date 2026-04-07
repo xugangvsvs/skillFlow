@@ -13,23 +13,29 @@ services:
       LLM_API_URL: http://hzllmapi.dyn.nesc.nokia.net:8080/v1/chat/completions
       LLM_MODEL: qwen/qwen3-32b
       FLASK_ENV: development
-        # GitLab skill sync (optional — leave blank to use local dev-skills/)
-        GITLAB_REPO_URL: ${GITLAB_REPO_URL:-}
-        GITLAB_BRANCH: ${GITLAB_BRANCH:-main}
-        GITLAB_TOKEN: ${GITLAB_TOKEN:-}
+      # GitLab skills: set GITLAB_REPO_URL to clone/pull real skills (default clone dir: /app/var/gitlab-skills)
+      GITLAB_REPO_URL: ${GITLAB_REPO_URL:-}
+      GITLAB_BRANCH: ${GITLAB_BRANCH:-main}
+      GITLAB_TOKEN: ${GITLAB_TOKEN:-}
+      GITLAB_SKILLS_CACHE: ${GITLAB_SKILLS_CACHE:-}
+      # Optional: force local skills dir instead of GitLab (overrides default cache when set)
+      SKILLS_PATH: ${SKILLS_PATH:-}
     volumes:
       # For development: mount local directories for hot-reload
       - ./src:/app/src
       - ./web:/app/web
-      - ./dev-skills:/app/dev-skills
       - ./config:/app/config
+      # Persist GitLab-cloned skills between restarts (used when GITLAB_REPO_URL is set and SKILLS_PATH is empty)
+      - ./var/gitlab-skills:/app/var/gitlab-skills
+      # Optional: mount local dev-skills only when using SKILLS_PATH=/app/dev-skills (no GitLab)
+      - ./dev-skills:/app/dev-skills
     # Keep container running even if main process exits (for debugging)
     stdin_open: true
     tty: true
     # Restart policy: restart only on failure
     restart: on-failure
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/api/skills"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=5).read()"]
       interval: 30s
       timeout: 10s
       retries: 3
