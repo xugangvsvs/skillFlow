@@ -122,6 +122,8 @@ You can store non-secret defaults in YAML instead of exporting many environment 
 
 Use cases wrap **existing** skills: each entry points at a `skill_name` that must match the **`name`** field in a `SKILL.md` loaded from `dev-skills/` or GitLab (and, for tool-first runs, the same key in `config/skill_adapters.yaml`).
 
+The committed example catalog defines four scenarios: **EFS→PFS**, **PFS→ICFS**, **ICFS→Code/UT/SCT**, and **Pronto analysis**, with matching sample skills under `dev-skills/`. When you use GitLab, keep the same `name` values in your remote `SKILL.md` files (or edit `use_cases.yaml` to point at your names).
+
 1. Copy [`config/use_cases.example.yaml`](config/use_cases.example.yaml) to **`config/use_cases.yaml`** (gitignored), or set `use_cases_path` in `skillflow.yaml` / `SKILLFLOW_USE_CASES_PATH`.
 2. If neither `use_cases.yaml` nor `use_cases_path` exists, the app falls back to the committed **`use_cases.example.yaml`**.
 3. **Web UI:** open the **Use cases** tab, pick a scenario, fill dynamic inputs (inherited from the skill unless overridden in YAML), then **Analyze**.

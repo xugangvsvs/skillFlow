@@ -348,7 +348,8 @@ def test_get_use_cases(client_example_uc_yaml):
     assert response.status_code == 200
     data = response.get_json()
     assert isinstance(data, list)
-    entry = next((x for x in data if x.get("id") == "analyze-ims2-snapshot"), None)
+    assert len(data) >= 4
+    entry = next((x for x in data if x.get("id") == "efs-to-pfs"), None)
     assert entry is not None
     assert entry.get("available") is True
     assert isinstance(entry.get("inputs"), list)
@@ -368,15 +369,15 @@ def test_analyze_with_use_case_id(client_example_uc_yaml):
         response = client_example_uc_yaml.post(
             "/api/analyze",
             json={
-                "use_case_id": "analyze-ims2-snapshot",
-                "user_input": "check snapshot",
+                "use_case_id": "efs-to-pfs",
+                "user_input": "draft pfs from efs",
             },
             content_type="application/json",
         )
     assert response.status_code == 200
     mock_run.assert_called_once()
     _args, kwargs = mock_run.call_args
-    assert kwargs["skill_name"] == "analyze-ims2"
+    assert kwargs["skill_name"] == "efs-to-pfs"
     mock_ask.assert_called_once()
 
 
@@ -384,8 +385,8 @@ def test_analyze_use_case_id_and_skill_name_rejected(client_example_uc_yaml):
     response = client_example_uc_yaml.post(
         "/api/analyze",
         json={
-            "use_case_id": "analyze-ims2-snapshot",
-            "skill_name": "analyze-ims2",
+            "use_case_id": "efs-to-pfs",
+            "skill_name": "efs-to-pfs",
             "user_input": "x",
         },
         content_type="application/json",
@@ -477,7 +478,7 @@ def test_analyze_stream_accepts_use_case_id(client_example_uc_yaml):
     ):
         response = client_example_uc_yaml.post(
             "/api/analyze/stream",
-            json={"use_case_id": "analyze-ims2-snapshot", "user_input": "q"},
+            json={"use_case_id": "efs-to-pfs", "user_input": "q"},
             content_type="application/json",
         )
     assert response.status_code == 200
