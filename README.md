@@ -9,7 +9,7 @@ SkillFlow is a Python-based web application that maps user requests to pre-defin
 | **Skills from GitLab** (recommended in many deployments) | Copy [`config/skillflow.example.yaml`](config/skillflow.example.yaml) to **`config/skillflow.yaml`**, set `gitlab_repo_url` (and branch if needed). See [Configuration file](#configuration-file-configskillflowyaml). Private repos: set **`GITLAB_TOKEN`** in the environment only. |
 | **Skills only from this repo’s sample tree** | You can skip the file: defaults use `dev-skills/` with no GitLab sync. |
 | **Custom LLM URL / model** | Same YAML file: `llm_api_url` / `llm_model`, or use environment variables. |
-| **Use cases tab / `use_case_id` API** | Optional: copy [`config/use_cases.example.yaml`](config/use_cases.example.yaml) to **`config/use_cases.yaml`**, or set `use_cases_path` in `skillflow.yaml`. See [Use cases](#use-cases-business-scenarios). |
+| **Use cases tab / `use_case_id` API** | Built in: fixed list in [`src/use_cases.py`](src/use_cases.py) (`FIXED_USE_CASE_DEFINITIONS`). See [Use cases](#use-cases-business-scenarios). |
 
 More detail: **[Configuration](#configuration)** (YAML + env vars) and the short guide in **[`config/README.md`](config/README.md)**.
 
@@ -26,7 +26,7 @@ More detail: **[Configuration](#configuration)** (YAML + env vars) and the short
 - 📝 **Dynamic Forms**: Auto-generate input fields from SKILL.md metadata.
 - 🔧 **Tool-First Execution**: Run external tools (e.g., `ims2_tool`) with graceful LLM fallback.
 - 📤 **File Upload**: Analyze logs, snapshots, or binary files via web UI.
-- **Use cases**: Optional catalog (`config/use_cases.yaml`) maps friendly scenario ids to underlying `SKILL.md` **`name`** values (same names as GitLab-synced skills). Web UI **Use cases** tab; API `GET /api/use-cases` and `use_case_id` on `POST /api/analyze` (see below).
+- **Use cases**: Fixed catalog in code maps scenario ids to `SKILL.md` **`name`** values (align names when using GitLab). Web UI **Use Cases** tab; API `GET /api/use-cases` and `use_case_id` on `POST /api/analyze` (see below).
 - 🚀 **Intranet Ready**: Uses Nokia internal LLM API; no external keys.
 
 ## Quick Start
@@ -73,12 +73,14 @@ skillFlow/
 │   ├── skillflow_config.py  # Load config/skillflow.yaml (env overrides)
 │   └── use_cases.py         # Use case catalog → skill_name resolution
 ├── dev-skills/              # Skill definitions
-│   └── analyze-ims2/        # Example: IMS2 analysis skill
-│       └── SKILL.md
+│   ├── analyze-ims2/        # Example IMS2 skill
+│   ├── efs-to-pfs/          # Workflow samples (Use Cases tab)
+│   ├── pfs-to-icfs/
+│   ├── icfs-to-code-ut-sct/
+│   └── analyze-pronto/      # Each folder contains SKILL.md
 ├── config/
 │   ├── README.md            # Pointers: skillflow.yaml setup
 │   ├── skill_adapters.yaml  # Tool execution config
-│   ├── use_cases.example.yaml  # Copy to use_cases.yaml for use-case catalog
 │   └── skillflow.example.yaml  # Copy to skillflow.yaml for local settings
 ├── web/
 │   └── index.html           # Web UI (Vanilla JS)
@@ -95,7 +97,7 @@ skillFlow/
 You can store non-secret defaults in YAML instead of exporting many environment variables.
 
 1. Copy the template: `config/skillflow.example.yaml` → `config/skillflow.yaml`
-2. Edit `gitlab_repo_url`, `gitlab_branch`, optional `skills_path` / `gitlab_skills_cache`, optional `use_cases_path`, optional `llm_api_url` / `llm_model`, optional `log_level`.
+2. Edit `gitlab_repo_url`, `gitlab_branch`, optional `skills_path` / `gitlab_skills_cache`, optional `llm_api_url` / `llm_model`, optional `log_level`.
 3. **Do not** put `GITLAB_TOKEN` or other secrets in this file — use environment variables for those.
 
 **Precedence:** for each setting, if the **environment variable** is set and non-empty, it **overrides** the YAML value.
@@ -116,19 +118,16 @@ You can store non-secret defaults in YAML instead of exporting many environment 
 | `GITLAB_SKILLS_CACHE` | *(empty)* | Same as YAML `gitlab_skills_cache` when using GitLab. |
 | `SKILLS_PATH` | *(see below)* | Same as YAML `skills_path`: if set, that directory is used and GitLab sync is skipped. |
 | `SKILLFLOW_LOG_LEVEL` | `INFO` | Same as YAML `log_level` for `skillflow.*` loggers. |
-| `SKILLFLOW_USE_CASES_PATH` or `USE_CASES_PATH` | *(empty)* | Optional path to a use-case YAML file (overrides `use_cases_path` in `skillflow.yaml`). |
 
 ### Use cases (business scenarios)
 
-Use cases wrap **existing** skills: each entry points at a `skill_name` that must match the **`name`** field in a `SKILL.md` loaded from `dev-skills/` or GitLab (and, for tool-first runs, the same key in `config/skill_adapters.yaml`).
+Use cases are **fixed in source** ([`src/use_cases.py`](src/use_cases.py) — `FIXED_USE_CASE_DEFINITIONS`). They are not loaded from GitLab or YAML. Each entry’s `skill_name` must match the **`name`** field in a `SKILL.md` under `dev-skills/` or your GitLab-synced tree (and, for tool-first runs, the same key in `config/skill_adapters.yaml`).
 
-The committed example catalog defines four scenarios: **EFS→PFS**, **PFS→ICFS**, **ICFS→Code/UT/SCT**, and **Pronto analysis**, with matching sample skills under `dev-skills/`. When you use GitLab, keep the same `name` values in your remote `SKILL.md` files (or edit `use_cases.yaml` to point at your names).
+The default catalog has four scenarios: **EFS→PFS**, **PFS→ICFS**, **ICFS→code/UT/SCT**, and **Pronto analysis**, with matching sample skills under `dev-skills/`. To change titles or mappings, edit `FIXED_USE_CASE_DEFINITIONS` and redeploy. When using GitLab, keep those `name` values in your remote `SKILL.md` files or update the fixed list to match your repo.
 
-1. Copy [`config/use_cases.example.yaml`](config/use_cases.example.yaml) to **`config/use_cases.yaml`** (gitignored), or set `use_cases_path` in `skillflow.yaml` / `SKILLFLOW_USE_CASES_PATH`.
-2. If neither `use_cases.yaml` nor `use_cases_path` exists, the app falls back to the committed **`use_cases.example.yaml`**.
-3. **Web UI:** open the **Use cases** tab, pick a scenario, fill dynamic inputs (inherited from the skill unless overridden in YAML), then **Analyze**.
-4. **API:** `GET /api/use-cases` returns `{ id, title, description, inputs, available }`. Submit analysis with JSON or multipart field **`use_case_id`** (and **`user_input`**). Do not send **`skill_name`** in the same request as **`use_case_id`**.
-5. Optional **`prompt_prefix`** in YAML is prepended to `user_input` on the server only (trusted configuration).
+1. **Web UI:** open the **Use Cases** tab, pick a scenario, fill dynamic inputs (from the skill metadata), then **Analyze**.
+2. **API:** `GET /api/use-cases` returns `{ id, title, description, inputs, available }`. Submit analysis with JSON or multipart field **`use_case_id`** (and **`user_input`**). Do not send **`skill_name`** in the same request as **`use_case_id`**.
+3. Optional **`prompt_prefix`** on a definition (in code) is prepended to `user_input` on the server only.
 
 ### Load skills from GitLab
 

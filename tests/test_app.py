@@ -5,22 +5,18 @@ from pathlib import Path
 from unittest.mock import patch
 from src.app import create_app
 
-USE_CASES_EXAMPLE_YAML = Path(__file__).resolve().parent.parent / "config" / "use_cases.example.yaml"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture
 def client_example_uc_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Stable use-case catalog; avoid GitLab sync if GITLAB_REPO_URL is set on the host."""
+    """App with local dev-skills; disable GitLab sync when GITLAB_REPO_URL is set on the host."""
     cfg = tmp_path / "skillflow-test.yaml"
     cfg.write_text("log_level: INFO\n", encoding="utf-8")
     monkeypatch.setenv("SKILLFLOW_CONFIG", str(cfg))
     monkeypatch.delenv("GITLAB_REPO_URL", raising=False)
     monkeypatch.delenv("GITLAB_TOKEN", raising=False)
-    app = create_app(
-        skill_path=str(REPO_ROOT / "dev-skills"),
-        use_cases_path=str(USE_CASES_EXAMPLE_YAML),
-    )
+    app = create_app(skill_path=str(REPO_ROOT / "dev-skills"))
     app.config["TESTING"] = True
     with app.test_client() as tc:
         yield tc
@@ -343,7 +339,7 @@ def test_analyze_passes_input_params_to_skill_runner(client):
 
 
 def test_get_use_cases(client_example_uc_yaml):
-    """GET /api/use-cases returns catalog from use_cases.example.yaml by default."""
+    """GET /api/use-cases returns the fixed in-code catalog merged with skills."""
     response = client_example_uc_yaml.get("/api/use-cases")
     assert response.status_code == 200
     data = response.get_json()
@@ -409,16 +405,17 @@ def test_analyze_use_case_prompt_prefix_in_prompt(tmp_path: Path, monkeypatch: p
     sf.write_text("log_level: INFO\n", encoding="utf-8")
     monkeypatch.setenv("SKILLFLOW_CONFIG", str(sf))
     monkeypatch.delenv("GITLAB_REPO_URL", raising=False)
-    uc_file = tmp_path / "uc.yaml"
-    uc_file.write_text(
-        "use_cases:\n"
-        "  - id: prefixed-uc\n"
-        "    title: Prefixed\n"
-        "    skill_name: analyze-ims2\n"
-        "    prompt_prefix: 'LINE_FROM_USE_CASE_CONFIG'\n",
-        encoding="utf-8",
+    app = create_app(
+        skill_path=str(REPO_ROOT / "dev-skills"),
+        use_case_definitions=[
+            {
+                "id": "prefixed-uc",
+                "title": "Prefixed",
+                "skill_name": "analyze-ims2",
+                "prompt_prefix": "LINE_FROM_USE_CASE_CONFIG",
+            },
+        ],
     )
-    app = create_app(skill_path=str(REPO_ROOT / "dev-skills"), use_cases_path=str(uc_file))
     app.config["TESTING"] = True
     with app.test_client() as client, patch(
         "src.app.CopilotExecutor.ask_ai", return_value="ok"

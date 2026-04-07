@@ -31,6 +31,3 @@ var/
 
 # Local SkillFlow settings (copy from config/skillflow.example.yaml)
 config/skillflow.yaml
-
-# Local use case catalog (copy from config/use_cases.example.yaml)
-config/use_cases.yaml

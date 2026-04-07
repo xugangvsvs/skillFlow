@@ -16,10 +16,6 @@ Full documentation: repository **[README.md](../README.md)** → sections *First
 
 Maps skills to external tools (tool-first execution). Keys must match **`name`** in each skill’s `SKILL.md`. See the main README.
 
-## `use_cases.yaml` — optional (you create this)
+## Use cases
 
-1. **Copy** `use_cases.example.yaml` → **`use_cases.yaml`** (same folder), or set `use_cases_path` in `skillflow.yaml`.
-2. Each entry has **`id`**, **`title`**, **`skill_name`** (must match a loaded skill’s `name`), optional **`description`**, **`prompt_prefix`**, and optional **`inputs`** (if omitted, inputs are copied from that skill).
-3. **`use_cases.yaml` is gitignored**; the example file stays in git.
-
-Align **`skill_name`** with GitLab `SKILL.md` **`name`** and with **`skill_adapters.yaml`** keys when using tools.
+Use cases are **not** configured here. They are fixed in **[`../src/use_cases.py`](../src/use_cases.py)** (`FIXED_USE_CASE_DEFINITIONS`). Each `skill_name` in that list must match a loaded `SKILL.md` **`name`** (and adapter keys when using tools).

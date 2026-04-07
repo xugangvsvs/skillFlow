@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from flask import Flask, g, jsonify, request, Response, send_from_directory
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Mapping, Optional
 try:
     from src.scanner import SkillScanner
     from src.executor import CopilotExecutor
@@ -21,7 +21,7 @@ import os
 from src.logging_context import CorrelationIdFilter, correlation_id_var, get_or_create_correlation_id
 from src.skillflow_config import load_skillflow_config, pick_str
 from src.skill_paths import resolve_skill_repo_dir
-from src.use_cases import apply_use_case, load_prepared_use_cases
+from src.use_cases import apply_use_case, prepare_use_cases
 
 log = logging.getLogger("skillflow.app")
 
@@ -79,7 +79,7 @@ def summarize_uploaded_log(log_text: str, max_chars: int = MAX_FALLBACK_LOG_CHAR
 def create_app(
     skill_path: str = "",
     adapter_path: str = "./config/skill_adapters.yaml",
-    use_cases_path: str = "",
+    use_case_definitions: Optional[List[Mapping[str, Any]]] = None,
 ) -> Flask:
     """
     Factory function to create and configure the Flask application.
@@ -87,7 +87,7 @@ def create_app(
     Args:
         skill_path: Path to the skills directory for discovery. When empty, see
         ``skill_paths.resolve_skill_repo_dir`` (``SKILLS_PATH``, GitLab cache, or ``dev-skills``).
-        use_cases_path: Optional override for the use case YAML file (tests).
+        use_case_definitions: Optional override of the fixed use-case list (tests only).
     
     Returns:
         Configured Flask app instance.
@@ -131,9 +131,7 @@ def create_app(
     skills = scanner.scan()
     executor = CopilotExecutor(api_url=llm_url, model=llm_model)
     skill_runner = SkillRunner(adapter_path=adapter_path)
-    use_cases_list, use_cases_by_id, _uc_path = load_prepared_use_cases(
-        project_root, file_cfg, skills, path_override=use_cases_path
-    )
+    use_cases_list, use_cases_by_id = prepare_use_cases(skills, use_case_definitions)
     
     # Helper: find skill by name
     def find_skill_by_name(name: str):

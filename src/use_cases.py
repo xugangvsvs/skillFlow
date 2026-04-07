@@ -1,68 +1,53 @@
-"""Load use case catalog: maps scenario ids to underlying SKILL.md ``name`` values."""
+"""Fixed use-case catalog: maps scenario ids to underlying SKILL.md ``name`` values.
+
+Use cases are defined in code (not YAML or GitLab). Edit ``FIXED_USE_CASE_DEFINITIONS`` to
+change titles or mapping; skills themselves still come from ``dev-skills/`` or GitLab sync.
+"""
 
 from __future__ import annotations
 
 import logging
-import os
-from pathlib import Path
-from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Tuple
-
-import yaml
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 log = logging.getLogger("skillflow.use_cases")
 
-
-def resolve_use_cases_file(
-    project_root: Path,
-    file_cfg: Mapping[str, Any],
-    path_override: str = "",
-) -> Path:
-    """Resolve the YAML file for use cases.
-
-    Precedence:
-    1. Non-empty ``path_override`` (tests / ``create_app(use_cases_path=...)``).
-    2. ``SKILLFLOW_USE_CASES_PATH`` or ``USE_CASES_PATH`` environment variable.
-    3. ``use_cases_path`` in ``skillflow.yaml`` (relative to project root if not absolute).
-    4. ``config/use_cases.yaml`` if it exists.
-    5. ``config/use_cases.example.yaml`` (committed default).
-    """
-    if (path_override or "").strip():
-        raw = Path(path_override.strip())
-        return raw.resolve() if raw.is_absolute() else (project_root / raw).resolve()
-
-    env = (os.environ.get("SKILLFLOW_USE_CASES_PATH") or os.environ.get("USE_CASES_PATH") or "").strip()
-    if env:
-        raw = Path(env)
-        return raw.resolve() if raw.is_absolute() else (project_root / raw).resolve()
-
-    yaml_path = file_cfg.get("use_cases_path") if file_cfg is not None else None
-    if yaml_path is not None and str(yaml_path).strip():
-        raw = Path(str(yaml_path).strip())
-        return raw.resolve() if raw.is_absolute() else (project_root / raw).resolve()
-
-    primary = (project_root / "config" / "use_cases.yaml").resolve()
-    if primary.is_file():
-        return primary
-    return (project_root / "config" / "use_cases.example.yaml").resolve()
-
-
-def load_use_case_definitions(path: Path) -> List[MutableMapping[str, Any]]:
-    """Parse use case entries from YAML; returns [] if file missing or invalid."""
-    if not path.is_file():
-        log.warning("use cases file not found: %s", path)
-        return []
-
-    with open(path, encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-
-    if not isinstance(data, dict):
-        return []
-
-    raw = data.get("use_cases")
-    if not isinstance(raw, list):
-        return []
-
-    return [e for e in raw if isinstance(e, dict)]
+# Fixed catalog — ids are stable API/UI keys; skill_name must match a loaded SKILL.md ``name``.
+FIXED_USE_CASE_DEFINITIONS: List[Dict[str, Any]] = [
+    {
+        "id": "efs-to-pfs",
+        "title": "Write PFS from EFS",
+        "description": (
+            "Produce or update a Product Feature Specification (PFS) from an "
+            "Engineering Feature Specification (EFS)."
+        ),
+        "skill_name": "efs-to-pfs",
+    },
+    {
+        "id": "pfs-to-icfs",
+        "title": "Write ICFS from PFS",
+        "description": (
+            "Derive an Interface Control Functional Specification (ICFS) from a PFS."
+        ),
+        "skill_name": "pfs-to-icfs",
+    },
+    {
+        "id": "icfs-to-code-ut-sct",
+        "title": "Code, unit tests, and SCT from ICFS",
+        "description": (
+            "Generate implementation code, unit tests (UT), and system/scenario test (SCT) "
+            "artifacts from an ICFS."
+        ),
+        "skill_name": "icfs-to-code-ut-sct",
+    },
+    {
+        "id": "analyze-pronto",
+        "title": "Analyze Pronto",
+        "description": (
+            "Analyze a Pronto defect: impact, reproduction steps, and investigation guidance."
+        ),
+        "skill_name": "analyze-pronto",
+    },
+]
 
 
 def build_use_case_index(
@@ -126,18 +111,15 @@ def build_use_case_index(
     return api_list, by_id
 
 
-def load_prepared_use_cases(
-    project_root: Path,
-    file_cfg: Mapping[str, Any],
+def prepare_use_cases(
     skills: List[Mapping[str, Any]],
-    path_override: str = "",
-) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]], Path]:
-    """Load YAML, merge with skills, return (api_list, by_id, path_used)."""
-    path = resolve_use_cases_file(project_root, file_cfg, path_override)
-    definitions = load_use_case_definitions(path)
-    api_list, by_id = build_use_case_index(definitions, skills)
-    log.info("loaded %d use cases from %s", len(api_list), path)
-    return api_list, by_id, path
+    definitions: Optional[List[Mapping[str, Any]]] = None,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]]]:
+    """Merge fixed (or test-supplied) definitions with loaded skills."""
+    defs = definitions if definitions is not None else FIXED_USE_CASE_DEFINITIONS
+    api_list, by_id = build_use_case_index(list(defs), skills)
+    log.info("prepared %d use cases from fixed catalog", len(api_list))
+    return api_list, by_id
 
 
 def apply_use_case(

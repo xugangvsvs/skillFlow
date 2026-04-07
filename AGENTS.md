@@ -22,7 +22,7 @@ The system is composed of four modules:
 
 ### B. Dynamic UI Rendering — "The Face"
 - Skill Explorer: displays all available skill cards.
-- Use cases tab: scenarios from `config/use_cases.yaml` (or example), mapped to loaded skills; `GET /api/use-cases`, `use_case_id` on analyze (see `src/use_cases.py`).
+- Use Cases tab: fixed scenarios in `src/use_cases.py` (`FIXED_USE_CASE_DEFINITIONS`), mapped to loaded skills by `name`; `GET /api/use-cases`, `use_case_id` on analyze.
 - Auto-Form: generates input fields from `SKILL.md` parameter definitions.
 - Stream Terminal: response / progress display (dark terminal style in `web/index.html`).
 - Module boundary: `web/index.html` (static) + REST in `src/app.py`.

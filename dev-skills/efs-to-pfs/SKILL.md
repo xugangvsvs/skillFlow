@@ -1,30 +1,32 @@
 ---
 name: efs-to-pfs
-description: 根据 EFS（特性说明）文档编写或更新 PFS（产品功能说明）；保持术语一致并标明假设与待确认项。
+description: >-
+  Draft or update a Product Feature Specification (PFS) from an Engineering Feature
+  Specification (EFS). Keep terminology consistent; label assumptions and open points.
 inputs:
   - name: efs_attachment
     type: file
-    label: EFS 文档（可选）
+    label: EFS document (optional)
     accept: .md,.txt,.pdf,.doc,.docx,.xml,.json
   - name: product_area
     type: text
-    label: 产品/模块范围（可选）
-    placeholder: 例如 5G L2 / 某网元
+    label: Product or module scope (optional)
+    placeholder: e.g. 5G L2 / specific network element
 ---
 
-# EFS → PFS
+# EFS to PFS
 
-## 目标
+## Goal
 
-基于用户提供的 EFS 内容与上下文，输出结构化的 **PFS** 草稿，便于评审与迭代。
+From the user’s EFS content and context, produce a structured **PFS** draft suitable for review.
 
-## 规则
+## Rules
 
-- 明确区分：需求事实（来自 EFS）、设计推断（需标注「推断」）、待产品/架构确认项（单独列表）。
-- PFS 建议包含：范围与目标、功能列表、接口/交互概要、非功能约束（性能/可靠性/安全若 EFS 有涉及）、验收要点。
-- 若输入不完整，列出 **最小补充信息清单**，仍可先给可评审的 PFS 骨架。
-- 使用与用户一致的术语；勿编造 EFS 未支持的具体参数值或外部系统行为。
+- Separate: facts stated in EFS, design inferences (mark as *inference*), and items pending product/architecture confirmation (own list).
+- PFS should cover: scope and objectives, feature list, interface/interaction summary, non-functional constraints if present in EFS (performance, reliability, security), acceptance highlights.
+- If input is incomplete, list **minimum follow-up information** while still providing a reviewable PFS skeleton.
+- Match the user’s terminology; do not invent parameter values or external system behavior not supported by the EFS.
 
-## 输出格式
+## Output
 
-使用 Markdown，层级清晰，便于粘贴到文档系统。
+Markdown with clear headings, ready to paste into a document system.

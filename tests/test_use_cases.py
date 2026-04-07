@@ -1,30 +1,27 @@
-"""Unit tests for use case catalog loading and resolution."""
-
-from pathlib import Path
+"""Unit tests for fixed use-case catalog and resolution."""
 
 import pytest
 
 from src.use_cases import (
+    FIXED_USE_CASE_DEFINITIONS,
     apply_use_case,
     build_use_case_index,
-    load_use_case_definitions,
-    resolve_use_cases_file,
+    prepare_use_cases,
 )
 
 
-def test_resolve_use_cases_file_override(tmp_path: Path) -> None:
-    p = tmp_path / "custom.yaml"
-    p.write_text("use_cases: []\n", encoding="utf-8")
-    got = resolve_use_cases_file(tmp_path, {}, path_override=str(p))
-    assert got.resolve() == p.resolve()
+def test_fixed_definitions_has_four_entries() -> None:
+    assert len(FIXED_USE_CASE_DEFINITIONS) == 4
+    ids = {d["id"] for d in FIXED_USE_CASE_DEFINITIONS}
+    assert ids == {"efs-to-pfs", "pfs-to-icfs", "icfs-to-code-ut-sct", "analyze-pronto"}
 
 
-def test_resolve_use_cases_file_falls_back_to_example() -> None:
-    """When use_cases.yaml missing, use committed example."""
-    root = Path(__file__).resolve().parent.parent
-    p = resolve_use_cases_file(root, {}, path_override="")
-    assert p.name in ("use_cases.yaml", "use_cases.example.yaml")
-    assert p.is_file()
+def test_prepare_use_cases_matches_fixed_length() -> None:
+    skills = [{"name": "efs-to-pfs", "inputs": []}]
+    api_list, by_id = prepare_use_cases(skills)
+    assert len(api_list) == len(FIXED_USE_CASE_DEFINITIONS)
+    assert by_id["efs-to-pfs"]["available"] is True
+    assert by_id["pfs-to-icfs"]["available"] is False
 
 
 def test_build_use_case_index_inherits_inputs_from_skill() -> None:
@@ -109,7 +106,3 @@ def test_apply_use_case_prefix() -> None:
     assert sn == "analyze-ims2"
     assert ui.startswith("Scenario intro.")
     assert "user body" in ui
-
-
-def test_load_use_case_definitions_missing_file(tmp_path: Path) -> None:
-    assert load_use_case_definitions(tmp_path / "nope.yaml") == []

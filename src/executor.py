@@ -37,13 +37,16 @@ class CopilotExecutor:
             return result
         except requests.exceptions.ConnectionError as e:
             log.warning("LLM connection error: %s", e)
-            return f"ERROR: 无法连接到 LLM 服务 ({self.api_url})，请确认网络或服务状态。"
+            return (
+                f"ERROR: Cannot connect to LLM service ({self.api_url}). "
+                "Check network reachability and service status."
+            )
         except requests.exceptions.Timeout as e:
             log.warning("LLM timeout: %s", e)
-            return "ERROR: LLM 服务响应超时，请稍后重试。"
+            return "ERROR: LLM request timed out. Retry later."
         except requests.exceptions.HTTPError as e:
             log.warning("LLM HTTP error: status=%s", e.response.status_code)
-            return f"ERROR: LLM 服务返回错误 {e.response.status_code}: {e.response.text}"
+            return f"ERROR: LLM returned HTTP {e.response.status_code}: {e.response.text}"
         except (KeyError, IndexError, ValueError) as e:
             log.warning("LLM response parse error: %s", e)
-            return f"ERROR: 解析 LLM 响应失败: {str(e)}"
+            return f"ERROR: Failed to parse LLM response: {str(e)}"

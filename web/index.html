@@ -265,7 +265,7 @@
       <h2>SkillFlow Web Assistant</h2>
       <div class="tabs" role="tablist">
         <button type="button" class="tab active" id="tab-skills" role="tab" aria-selected="true">Skills</button>
-        <button type="button" class="tab" id="tab-usecases" role="tab" aria-selected="false">Use cases</button>
+        <button type="button" class="tab" id="tab-usecases" role="tab" aria-selected="false">Use Cases</button>
       </div>
       <input id="skill-search" type="text" placeholder="Search skills..." aria-label="Filter list">
       <ul id="skill-list">
@@ -287,7 +287,7 @@
 
       <div class="card">
         <h2>Stream Terminal</h2>
-        <pre id="terminal-output">[System] Ready. Select a skill or use case, then submit a request.</pre>
+        <pre id="terminal-output">[System] Ready. Select a skill or a use case, then submit a request.</pre>
       </div>
     </section>
   </div>
@@ -423,7 +423,7 @@
         skillListEl.innerHTML = "";
         selectedUseCaseId = "";
         if (!useCases.length) {
-          skillListEl.innerHTML = "<li class='note'>No use cases configured.</li>";
+          skillListEl.innerHTML = "<li class='note'>No use cases available.</li>";
           selectedSkillEl.textContent = "Selected: none";
           renderDynamicInputs([]);
           return;
@@ -437,7 +437,7 @@
             "<small>" + (uc.description || uc.id || "") + "</small>";
           li.addEventListener("click", function () {
             if (!avail) {
-              appendTerminal("This use case is unavailable (underlying skill not loaded). Configure use_cases.yaml and skills.", true);
+              appendTerminal("This use case is unavailable (underlying skill not loaded). Add a matching SKILL.md or sync skills from GitLab.", true);
               return;
             }
             Array.from(skillListEl.children).forEach(el => el.classList.remove("active"));

@@ -87,34 +87,29 @@ class SkillScanner:
         return skills
 
 def match_skill(skills, user_input):
-    """
-    极简、健壮的匹配引擎
-    """
+    """Minimal, robust skill matcher for CLI-style input."""
     if not user_input:
         return None
-    
-    # 1. 统一转小写
+
     query = user_input.lower()
-    
+
     for skill in skills:
-        # --- 维度 A: Keywords (最优先) ---
-        # 使用 or [] 确保哪怕 YAML 没填内容，keywords 也是个列表
-        kws = skill.get('keywords') or []
+        # A: keywords (highest priority) — normalize to list
+        kws = skill.get("keywords") or []
         if isinstance(kws, str):
             kws = [kws]
-        
-        # 只要有一个 keyword 被包含在用户输入中
+
         if any(str(k).lower() in query for k in kws if k):
             return skill
 
-        # --- 维度 B: Description (次优先) ---
-        desc = skill.get('description') or ""
+        # B: description
+        desc = skill.get("description") or ""
         if query in str(desc).lower():
             return skill
 
-        # --- 维度 C: Name (保底) ---
-        name = skill.get('name') or ""
+        # C: name (fallback)
+        name = skill.get("name") or ""
         if query in str(name).lower():
             return skill
-            
+
     return None

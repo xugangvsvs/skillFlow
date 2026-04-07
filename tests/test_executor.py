@@ -13,7 +13,7 @@ def _mock_response(mocker, content="AI: Suggested fix for log error.", status_co
 
 
 def test_executor_returns_ai_content(mocker):
-    """正常响应：返回 choices[0].message.content"""
+    """Happy path: return choices[0].message.content."""
     mock_post = mocker.patch("requests.post", return_value=_mock_response(mocker))
 
     exe = CopilotExecutor()
@@ -26,7 +26,7 @@ def test_executor_returns_ai_content(mocker):
 
 
 def test_executor_uses_configured_model(mocker):
-    """验证 model 正确传入 payload"""
+    """Configured model is sent in the JSON payload."""
     mock_post = mocker.patch("requests.post", return_value=_mock_response(mocker, "analysis result"))
 
     exe = CopilotExecutor(model="qwen/qwen3-32b")
@@ -37,22 +37,22 @@ def test_executor_uses_configured_model(mocker):
 
 
 def test_executor_connection_error(mocker):
-    """网络不通时返回可读的错误信息"""
+    """Connection errors return a readable English message."""
     import requests as req
     mocker.patch("requests.post", side_effect=req.exceptions.ConnectionError())
 
     exe = CopilotExecutor()
     result = exe.ask_ai("any prompt")
 
-    assert result.startswith("ERROR: 无法连接到 LLM 服务")
+    assert result.startswith("ERROR: Cannot connect to LLM service")
 
 
 def test_executor_timeout(mocker):
-    """超时时返回可读的错误信息"""
+    """Timeouts return a readable English message."""
     import requests as req
     mocker.patch("requests.post", side_effect=req.exceptions.Timeout())
 
     exe = CopilotExecutor()
     result = exe.ask_ai("any prompt")
 
-    assert "超时" in result
+    assert "timed out" in result.lower()
