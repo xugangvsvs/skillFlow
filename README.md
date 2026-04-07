@@ -2,9 +2,19 @@
 
 SkillFlow is a Python-based web application that maps user requests to pre-defined "skills" (AI-powered analysis modules) and delivers results via Nokia's internal LLM API. Built for enterprise intranet use with zero external API dependencies.
 
+## First-time configuration (read this)
+
+| If you want… | Do this |
+|--------------|---------|
+| **Skills from GitLab** (recommended in many deployments) | Copy [`config/skillflow.example.yaml`](config/skillflow.example.yaml) to **`config/skillflow.yaml`**, set `gitlab_repo_url` (and branch if needed). See [Configuration file](#configuration-file-configskillflowyaml). Private repos: set **`GITLAB_TOKEN`** in the environment only. |
+| **Skills only from this repo’s sample tree** | You can skip the file: defaults use `dev-skills/` with no GitLab sync. |
+| **Custom LLM URL / model** | Same YAML file: `llm_api_url` / `llm_model`, or use environment variables. |
+
+More detail: **[Configuration](#configuration)** (YAML + env vars) and the short guide in **[`config/README.md`](config/README.md)**.
+
 ## Architecture
 
-- **Scout** (`src/scanner.py`): Discovers and parses skill definitions from `dev-skills/` directories.
+- **Scout** (`src/scanner.py`): Discovers and parses skill definitions from `dev-skills/`, or from GitLab when configured via **`config/skillflow.yaml`** (or env vars).
 - **Brain** (`src/executor.py`): Calls Nokia internal LLM API (`qwen/qwen3-32b`) with structured prompts.
 - **Face** (`web/index.html` + Flask): Web UI for skill selection, log upload, and result display.
 - **Guard** (`src/skill_runner.py`): Tool-first execution layer with fallback to LLM-only mode.
@@ -21,6 +31,8 @@ SkillFlow is a Python-based web application that maps user requests to pre-defin
 
 ### Option 1: Docker (Recommended for Production/CI)
 
+For GitLab skills or non-default LLM settings, create **`config/skillflow.yaml`** first (copy from `config/skillflow.example.yaml`). See [First-time configuration](#first-time-configuration-read-this).
+
 ```bash
 # Build and run in one command
 docker-compose up --build
@@ -32,6 +44,8 @@ docker-compose up
 ```
 
 ### Option 2: Local Python
+
+Create **`config/skillflow.yaml`** when you need GitLab or overrides (copy from `config/skillflow.example.yaml`). Optional if you only use bundled `dev-skills/`.
 
 ```bash
 # Install dependencies
@@ -59,6 +73,7 @@ skillFlow/
 │   └── analyze-ims2/        # Example: IMS2 analysis skill
 │       └── SKILL.md
 ├── config/
+│   ├── README.md            # Pointers: skillflow.yaml setup
 │   ├── skill_adapters.yaml  # Tool execution config
 │   └── skillflow.example.yaml  # Copy to skillflow.yaml for local settings
 ├── web/
@@ -261,10 +276,11 @@ See `AGENTS.md` for project constraints and best practices:
 ## Support
 
 For issues or questions:
-1. Check `docs/plan.md` for current priorities.
-2. Review `AGENTS.md` for project rules.
-3. Run tests: `pytest -q` → ensure baseline is green.
-4. Enable debug logs in Flask: set `FLASK_ENV=development`.
+1. **Configuration:** [First-time configuration](#first-time-configuration-read-this) and [`config/README.md`](config/README.md).
+2. Check `docs/plan.md` for current priorities.
+3. Review `AGENTS.md` for project rules.
+4. Run tests: `pytest -q` → ensure baseline is green.
+5. Enable debug logs in Flask: set `FLASK_ENV=development`.
 
 ## License
 

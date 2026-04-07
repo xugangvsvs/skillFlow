@@ -1,6 +1,11 @@
-# Copy to config/skillflow.yaml and adjust (that file is gitignored by default).
-# Precedence: environment variables override these values. Do not put secrets here;
-# use GITLAB_TOKEN in the environment for private GitLab repos.
+# =============================================================================
+# SETUP: copy this file to skillflow.yaml (same directory), then edit values.
+#   cp skillflow.example.yaml skillflow.yaml   # Linux / macOS
+#   copy skillflow.example.yaml skillflow.yaml # Windows CMD
+# skillflow.yaml is gitignored — safe for your URLs; this example stays in git.
+# =============================================================================
+# Precedence: environment variables override these values when set and non-empty.
+# Do not put secrets here — use GITLAB_TOKEN in the environment for private GitLab.
 
 # --- Skills (SKILL.md trees) ---
 # If set, use this directory only (no GitLab clone/pull).
