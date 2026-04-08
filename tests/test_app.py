@@ -439,6 +439,67 @@ def test_analyze_use_case_prompt_prefix_in_prompt(tmp_path: Path, monkeypatch: p
     assert "user line" in sent
 
 
+def test_icfs_use_case_maps_to_nrm_coding_workflow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fixed use case icfs-to-code-ut-sct resolves to skill nrm-coding-workflow when present."""
+    skill_root = tmp_path / "skills"
+    nrm_dir = skill_root / "nrm-coding-workflow"
+    nrm_dir.mkdir(parents=True)
+    (nrm_dir / "SKILL.md").write_text(
+        "---\nname: nrm-coding-workflow\ndescription: Test stub for use case mapping\n---\n\n# Stub\n",
+        encoding="utf-8",
+    )
+    cfg = tmp_path / "skillflow-test.yaml"
+    cfg.write_text("log_level: INFO\n", encoding="utf-8")
+    monkeypatch.setenv("SKILLFLOW_CONFIG", str(cfg))
+    monkeypatch.delenv("GITLAB_REPO_URL", raising=False)
+    monkeypatch.delenv("GITLAB_TOKEN", raising=False)
+    app = create_app(skill_path=str(skill_root))
+    app.config["TESTING"] = True
+    with app.test_client() as client:
+        uc_res = client.get("/api/use-cases")
+        assert uc_res.status_code == 200
+        uc_list = uc_res.get_json()
+        icfs = next(x for x in uc_list if x.get("id") == "icfs-to-code-ut-sct")
+        assert icfs.get("available") is True
+        input_names = {i.get("name") for i in (icfs.get("inputs") or [])}
+        assert "linsee_ssh_host" in input_names
+        assert "work_dir" in input_names
+        assert "repo_name" in input_names
+
+        with patch("src.app.CopilotExecutor.ask_ai", return_value="ok") as mock_ask, patch(
+            "src.app.SkillRunner.run_tool_if_configured",
+            return_value={
+                "mode": "fallback",
+                "reason": "no_adapter",
+                "tool_output": "",
+                "note": "No adapter configured",
+            },
+        ) as mock_run:
+            response = client.post(
+                "/api/analyze",
+                json={
+                    "use_case_id": "icfs-to-code-ut-sct",
+                    "user_input": "implement from ICFS",
+                    "input_params": {
+                        "linsee_ssh_host": "hzlinc01-boam.linsee.dyn.nesc.nokia.net",
+                        "work_dir": "/tmp/ws",
+                        "repo_name": "demo_repo",
+                    },
+                },
+                content_type="application/json",
+            )
+        assert response.status_code == 200
+        mock_run.assert_called_once()
+        _args, kwargs = mock_run.call_args
+        assert kwargs["skill_name"] == "nrm-coding-workflow"
+        mock_ask.assert_called_once()
+        sent = mock_ask.call_args[0][0]
+        assert "SkillFlow does not run SSH" in sent
+        assert "linsee_ssh_host" in sent
+
+
 def test_analyze_stream_emits_single_sse_data_event(client):
     """Contract: one SSE data line with full LLM text (not token streaming)."""
     with patch("src.app.CopilotExecutor.ask_ai", return_value="complete answer"), patch(

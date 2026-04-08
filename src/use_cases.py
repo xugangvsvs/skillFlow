@@ -37,7 +37,47 @@ FIXED_USE_CASE_DEFINITIONS: List[Dict[str, Any]] = [
             "Generate implementation code, unit tests (UT), and system/scenario test (SCT) "
             "artifacts from an ICFS."
         ),
-        "skill_name": "icfs-to-code-ut-sct",
+        "skill_name": "nrm-coding-workflow",
+        "prompt_prefix": (
+            "Context for nrm-coding-workflow: SkillFlow does not run SSH or nrm on the server. "
+            "Assume the user will SSH to the LinSee host they provide, then run all nrm/scripts "
+            "only under the given work_dir and repo_name on that remote machine — not on the "
+            "SkillFlow host.\n"
+            "上下文：SkillFlow 服务端不会代 SSH 或执行 nrm。请假定用户会登录其提供的 LinSee 主机，"
+            "且仅在所给 work_dir / repo_name 对应的远程仓库环境中执行 nrm 与 skill 中的脚本。"
+        ),
+        "inputs": [
+            {
+                "name": "icfs_attachment",
+                "type": "file",
+                "label": "ICFS document (optional)",
+                "accept": ".md,.txt,.pdf,.doc,.docx,.xml,.json",
+            },
+            {
+                "name": "language_stack",
+                "type": "text",
+                "label": "Language or framework (optional)",
+                "placeholder": "e.g. Python 3.11 / C++17 / Java 17",
+            },
+            {
+                "name": "linsee_ssh_host",
+                "type": "text",
+                "label": "LinSee SSH host (where nrm runs)",
+                "placeholder": "e.g. hzlinc01-boam.linsee.dyn.nesc.nokia.net",
+            },
+            {
+                "name": "work_dir",
+                "type": "text",
+                "label": "Remote work directory (absolute path on LinSee)",
+                "placeholder": "e.g. /path/to/your/checkout",
+            },
+            {
+                "name": "repo_name",
+                "type": "text",
+                "label": "Repository name (nrm repo name)",
+                "placeholder": "e.g. netconf / gnmi (as used with nrm)",
+            },
+        ],
     },
     {
         "id": "analyze-pronto",
