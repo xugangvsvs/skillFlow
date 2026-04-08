@@ -278,6 +278,30 @@
       justify-self: start;
     }
 
+    .remote-sep {
+      border: none;
+      border-top: 1px solid var(--line);
+      margin: 12px 0;
+    }
+
+    #patch-diff-input {
+      width: 100%;
+      min-height: 160px;
+      font: 13px/1.4 "Consolas", "Courier New", monospace;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: #fff;
+      box-sizing: border-box;
+    }
+
+    .patch-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+
     #terminal-output {
       margin: 0;
       padding: 16px;
@@ -326,25 +350,46 @@
         <p id="selected-skill">Selected: none</p>
         <div id="dynamic-inputs"></div>
         <div id="remote-run-panel" class="remote-run-panel" hidden>
-          <p class="note">
-            Phase 1 — run a whitelisted nrm-coding-workflow script on LinSee via SkillFlow (SSH).
-            Requires <code>SKILLFLOW_REMOTE_SSH_ENABLED=1</code>, identity key, and SSH user on the server.
-          </p>
-          <label for="remote-action">Remote action</label>
-          <select id="remote-action" aria-label="Remote action">
-            <option value="dev_status">dev_status (dev-status.sh)</option>
-            <option value="dev_build">dev_build (dev-build.sh)</option>
-            <option value="dev_ut">dev_ut (dev-ut.sh)</option>
-          </select>
-          <div id="ut-filter-row" hidden>
-            <label for="ut-test-filter">UT test filter (dev_ut only)</label>
-            <input id="ut-test-filter" type="text" placeholder="*">
+          <div id="phase1-ssh-block">
+            <p class="note">
+              <strong>Phase 1</strong> — run a whitelisted nrm-coding-workflow script on LinSee via SkillFlow (SSH).
+              Requires <code>SKILLFLOW_REMOTE_SSH_ENABLED=1</code>, identity key, and SSH user on the server.
+            </p>
+            <label for="remote-action">Remote action</label>
+            <select id="remote-action" aria-label="Remote action">
+              <option value="dev_status">dev_status (dev-status.sh)</option>
+              <option value="dev_build">dev_build (dev-build.sh)</option>
+              <option value="dev_ut">dev_ut (dev-ut.sh)</option>
+            </select>
+            <div id="ut-filter-row" hidden>
+              <label for="ut-test-filter">UT test filter (dev_ut only)</label>
+              <input id="ut-test-filter" type="text" placeholder="*">
+            </div>
+            <label class="confirm-row">
+              <input type="checkbox" id="remote-run-confirmed">
+              <span>I confirm running this script on the LinSee host above</span>
+            </label>
+            <button type="button" id="remote-run-btn">Run remote script</button>
           </div>
-          <label class="confirm-row">
-            <input type="checkbox" id="remote-run-confirmed">
-            <span>I confirm running this script on the LinSee host above</span>
-          </label>
-          <button type="button" id="remote-run-btn">Run remote script</button>
+          <hr class="remote-sep">
+          <p class="note">
+            <strong>Phase 2</strong> — validate / apply a unified diff with <code>git apply</code> at remote <code>work_dir</code> (repo root).
+          </p>
+          <label for="patch-diff-input">Unified diff (git format)</label>
+          <textarea id="patch-diff-input" rows="10" placeholder="Paste a diff, or use Phase 3 to suggest one via LLM."></textarea>
+          <div class="patch-actions">
+            <button type="button" id="validate-patch-btn">Validate patch</button>
+            <button type="button" id="suggest-patch-btn">Suggest patch (LLM)</button>
+            <span class="note">Agent iter: <span id="agent-iter">0</span> / <span id="agent-iter-max">8</span></span>
+          </div>
+          <div id="phase2-apply-block">
+            <label class="confirm-row">
+              <input type="checkbox" id="patch-apply-confirmed">
+              <span>I confirm applying this diff on the remote host (<code>git apply</code>)</span>
+            </label>
+            <button type="button" id="apply-patch-btn">Apply patch on remote</button>
+          </div>
+          <p class="note" id="remote-phase-hint"></p>
         </div>
         <textarea id="analysis-input" placeholder="Enter logs or analysis request..."></textarea>
         <input id="log-file" type="file" accept=".log,.txt,.md,.json,.xml,.csv">
@@ -380,14 +425,33 @@
       let selectedUseCaseId = "";
       let allSkills = [];
       let allUseCases = [];
-      let remoteNrmStatus = { enabled: false, allowed_actions: [] };
+      let remoteNrmStatus = {
+        enabled: false,
+        allowed_actions: [],
+        phase3_suggest_patch: false,
+        max_agent_iterations: 8,
+      };
+      let lastRemoteStdout = "";
+      let lastRemoteStderr = "";
+      let lastRemoteRc = null;
+      let agentIteration = 0;
 
       const remoteRunPanelEl = document.getElementById("remote-run-panel");
+      const phase1SshBlockEl = document.getElementById("phase1-ssh-block");
+      const phase2ApplyBlockEl = document.getElementById("phase2-apply-block");
+      const remotePhaseHintEl = document.getElementById("remote-phase-hint");
       const remoteActionEl = document.getElementById("remote-action");
       const utFilterRowEl = document.getElementById("ut-filter-row");
       const utTestFilterEl = document.getElementById("ut-test-filter");
       const remoteRunConfirmedEl = document.getElementById("remote-run-confirmed");
       const remoteRunBtnEl = document.getElementById("remote-run-btn");
+      const patchDiffInputEl = document.getElementById("patch-diff-input");
+      const validatePatchBtnEl = document.getElementById("validate-patch-btn");
+      const suggestPatchBtnEl = document.getElementById("suggest-patch-btn");
+      const applyPatchBtnEl = document.getElementById("apply-patch-btn");
+      const patchApplyConfirmedEl = document.getElementById("patch-apply-confirmed");
+      const agentIterEl = document.getElementById("agent-iter");
+      const agentIterMaxEl = document.getElementById("agent-iter-max");
 
       function collectDynamicInputParams() {
         const inputParams = {};
@@ -421,10 +485,32 @@
           return;
         }
         const show =
-          remoteNrmStatus.enabled &&
           browseMode === "usecases" &&
           selectedUseCaseId === "icfs-to-code-ut-sct";
         remoteRunPanelEl.hidden = !show;
+        if (phase1SshBlockEl) {
+          phase1SshBlockEl.hidden = !remoteNrmStatus.enabled;
+        }
+        if (phase2ApplyBlockEl) {
+          phase2ApplyBlockEl.hidden = !remoteNrmStatus.enabled;
+        }
+        if (suggestPatchBtnEl) {
+          suggestPatchBtnEl.hidden = !remoteNrmStatus.phase3_suggest_patch;
+        }
+        if (agentIterMaxEl && remoteNrmStatus.max_agent_iterations != null) {
+          agentIterMaxEl.textContent = String(remoteNrmStatus.max_agent_iterations);
+        }
+        if (agentIterEl) {
+          agentIterEl.textContent = String(agentIteration);
+        }
+        if (remotePhaseHintEl) {
+          if (!remoteNrmStatus.enabled) {
+            remotePhaseHintEl.textContent =
+              "SSH is off on the server: you can still validate diffs and use LLM suggest; enable SKILLFLOW_REMOTE_SSH_ENABLED for Phase 1 run and apply-patch.";
+          } else {
+            remotePhaseHintEl.textContent = "";
+          }
+        }
         if (remoteActionEl && utFilterRowEl) {
           utFilterRowEl.hidden = remoteActionEl.value !== "dev_ut";
         }
@@ -572,6 +658,7 @@
             selectedUseCaseId = uc.id || "";
             selectedSkillEl.textContent = "Selected use case: " + (uc.title || selectedUseCaseId);
             renderDynamicInputs(uc.inputs || []);
+            agentIteration = 0;
             updateRemotePanelVisibility();
           });
           if (!picked && avail && uc.id) {
@@ -579,6 +666,7 @@
             selectedUseCaseId = uc.id;
             selectedSkillEl.textContent = "Selected use case: " + (uc.title || selectedUseCaseId);
             renderDynamicInputs(uc.inputs || []);
+            agentIteration = 0;
             picked = true;
           }
           skillListEl.appendChild(li);
@@ -642,12 +730,28 @@
         try {
           const resRemote = await fetch("/api/remote/nrm-workflow/status");
           if (resRemote.ok) {
-            remoteNrmStatus = await resRemote.json();
+            const j = await resRemote.json();
+            remoteNrmStatus = {
+              enabled: !!j.enabled,
+              allowed_actions: j.allowed_actions || [],
+              phase3_suggest_patch: !!j.phase3_suggest_patch,
+              max_agent_iterations: j.max_agent_iterations != null ? j.max_agent_iterations : 8,
+            };
           } else {
-            remoteNrmStatus = { enabled: false, allowed_actions: [] };
+            remoteNrmStatus = {
+              enabled: false,
+              allowed_actions: [],
+              phase3_suggest_patch: false,
+              max_agent_iterations: 8,
+            };
           }
         } catch (error) {
-          remoteNrmStatus = { enabled: false, allowed_actions: [] };
+          remoteNrmStatus = {
+            enabled: false,
+            allowed_actions: [],
+            phase3_suggest_patch: false,
+            max_agent_iterations: 8,
+          };
         }
         try {
           const resSkills = await fetch("/api/skills");
@@ -800,6 +904,9 @@
             appendTerminal(data.error || "Remote run failed", true);
             return;
           }
+          lastRemoteStdout = data.stdout || "";
+          lastRemoteStderr = data.stderr || "";
+          lastRemoteRc = data.returncode;
           appendTerminal("[Remote] exit=" + data.returncode + (data.timed_out ? " (timed out)" : ""));
           if (data.stdout) {
             appendTerminal("[Remote stdout]\n" + data.stdout);
@@ -814,10 +921,169 @@
         }
       }
 
+      async function runValidatePatch() {
+        if (!patchDiffInputEl) {
+          return;
+        }
+        const diff = patchDiffInputEl.value;
+        setBusy(true);
+        appendTerminal("[System] Validating unified diff…");
+        try {
+          const response = await fetch("/api/remote/nrm-workflow/validate-patch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              use_case_id: "icfs-to-code-ut-sct",
+              unified_diff: diff,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            appendTerminal(data.error || "Validate request failed", true);
+            return;
+          }
+          if (data.ok) {
+            appendTerminal("[Patch] OK — paths: " + (data.paths || []).join(", "));
+          } else {
+            appendTerminal("[Patch] Invalid: " + (data.error || "?"), true);
+          }
+        } catch (error) {
+          appendTerminal("Network error: " + error.message, true);
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      async function runSuggestPatch() {
+        if (!remoteNrmStatus.phase3_suggest_patch) {
+          appendTerminal("Suggest-patch is disabled on the server.", true);
+          return;
+        }
+        if (browseMode !== "usecases" || selectedUseCaseId !== "icfs-to-code-ut-sct") {
+          appendTerminal("Select the ICFS code / UT / SCT use case first.", true);
+          return;
+        }
+        const userInput = analysisInputEl.value.trim();
+        if (!userInput) {
+          appendTerminal("Enter analysis / goal in the main text area for the LLM.", true);
+          return;
+        }
+        if (agentIteration >= remoteNrmStatus.max_agent_iterations) {
+          appendTerminal("Agent iteration limit reached for this session (reload page to reset).", true);
+          return;
+        }
+        const params = collectDynamicInputParams().inputParams;
+        setBusy(true);
+        appendTerminal("[System] LLM suggest-patch (iteration " + agentIteration + ")…");
+        try {
+          const response = await fetch("/api/remote/nrm-workflow/suggest-patch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              use_case_id: "icfs-to-code-ut-sct",
+              user_input: userInput,
+              iteration_index: agentIteration,
+              remote_last_stdout: lastRemoteStdout,
+              remote_last_stderr: lastRemoteStderr,
+              remote_last_returncode: lastRemoteRc,
+              gerrit_change_id: params.gerrit_change_id || "",
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            appendTerminal(data.error || "Suggest-patch failed", true);
+            return;
+          }
+          if (data.proposed_diff) {
+            patchDiffInputEl.value = data.proposed_diff;
+            appendTerminal("[Patch] LLM proposed diff — paths: " + (data.paths || []).join(", "));
+            if (data.validation_error) {
+              appendTerminal("[Patch] Validation warning: " + data.validation_error, true);
+            }
+            agentIteration += 1;
+            updateRemotePanelVisibility();
+          } else {
+            appendTerminal(
+              "[Patch] No diff (" + (data.parse_note || "?") + "): " +
+              String(data.raw_response || "").slice(0, 800)
+            );
+          }
+        } catch (error) {
+          appendTerminal("Network error: " + error.message, true);
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      async function runApplyPatch() {
+        if (!remoteNrmStatus.enabled) {
+          appendTerminal("Enable remote SSH on the server to apply patches.", true);
+          return;
+        }
+        if (browseMode !== "usecases" || selectedUseCaseId !== "icfs-to-code-ut-sct") {
+          appendTerminal("Select the ICFS code / UT / SCT use case first.", true);
+          return;
+        }
+        if (!patchApplyConfirmedEl.checked) {
+          appendTerminal("Check the patch apply confirmation box first.", true);
+          return;
+        }
+        const params = collectDynamicInputParams().inputParams;
+        const host = params.linsee_ssh_host;
+        const wd = params.work_dir;
+        if (!host || !wd) {
+          appendTerminal("Fill LinSee SSH host and remote work directory first.", true);
+          return;
+        }
+        const diff = (patchDiffInputEl && patchDiffInputEl.value) || "";
+        if (!diff.trim()) {
+          appendTerminal("Paste or generate a unified diff first.", true);
+          return;
+        }
+        setBusy(true);
+        appendTerminal("[System] Applying patch on remote…");
+        try {
+          const response = await fetch("/api/remote/nrm-workflow/apply-patch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              use_case_id: "icfs-to-code-ut-sct",
+              linsee_ssh_host: host,
+              work_dir: wd,
+              unified_diff: diff,
+              patch_apply_confirmed: true,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            appendTerminal(data.error || "Apply-patch failed", true);
+            return;
+          }
+          appendTerminal(
+            "[Patch] apply exit=" + data.returncode +
+            (data.timed_out ? " (timed out)" : "") +
+            " phase=" + (data.phase || "?")
+          );
+          if (data.stdout) {
+            appendTerminal("[Patch stdout]\n" + data.stdout);
+          }
+          if (data.stderr) {
+            appendTerminal("[Patch stderr]\n" + data.stderr, data.returncode !== 0);
+          }
+        } catch (error) {
+          appendTerminal("Network error: " + error.message, true);
+        } finally {
+          setBusy(false);
+        }
+      }
+
       remoteActionEl.addEventListener("change", function () {
         utFilterRowEl.hidden = remoteActionEl.value !== "dev_ut";
       });
       remoteRunBtnEl.addEventListener("click", runRemoteNrmScript);
+      validatePatchBtnEl.addEventListener("click", runValidatePatch);
+      suggestPatchBtnEl.addEventListener("click", runSuggestPatch);
+      applyPatchBtnEl.addEventListener("click", runApplyPatch);
 
       tabSkillsEl.addEventListener("click", function () { setBrowseMode("skills"); });
       tabUcEl.addEventListener("click", function () { setBrowseMode("usecases"); });

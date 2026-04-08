@@ -11,7 +11,11 @@ import os
 import re
 import shlex
 import subprocess
+import tempfile
+import uuid
 from typing import Any, Dict, List, Optional, Tuple
+
+from src import remote_patch
 
 log = logging.getLogger("skillflow.remote_runner")
 
@@ -101,6 +105,32 @@ def validate_host(host: str) -> Optional[str]:
     if not re.match(r"^[a-zA-Z0-9._-]+$", host):
         return "linsee_ssh_host has invalid characters"
     return fix_host_allowlist_validation(host)
+
+
+def build_scp_command(
+    local_file: str,
+    host: str,
+    ssh_user: str,
+    identity_path: str,
+    remote_dest: str,
+) -> List[str]:
+    """Build ``scp`` to copy a local file to ``user@host:remote_dest``."""
+    cmd: List[str] = [
+        "scp",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        "-o",
+        f"ConnectTimeout={os.environ.get('SKILLFLOW_REMOTE_SSH_CONNECT_TIMEOUT', '30')}",
+    ]
+    if _truthy_env("SKILLFLOW_REMOTE_SSH_USE_KNOWN_HOSTS_ONLY"):
+        cmd[cmd.index("StrictHostKeyChecking=accept-new")] = "StrictHostKeyChecking=yes"
+    if identity_path:
+        cmd.extend(["-i", identity_path])
+    target = f"{ssh_user}@{host}:{remote_dest}" if ssh_user else f"{host}:{remote_dest}"
+    cmd.extend([local_file, target])
+    return cmd
 
 
 def build_ssh_command(
@@ -221,3 +251,132 @@ def run_nrm_workflow_remote(
         "stdout": completed.stdout or "",
         "stderr": completed.stderr or "",
     }, None
+
+
+def _patch_apply_timeout_sec() -> int:
+    raw = (os.environ.get("SKILLFLOW_REMOTE_PATCH_TIMEOUT_SEC") or "").strip()
+    if raw.isdigit():
+        return max(30, int(raw))
+    return 180
+
+
+def apply_unified_diff_remote(
+    *,
+    host: str,
+    ssh_user: str,
+    identity_path: str,
+    work_dir: str,
+    unified_diff: str,
+    timeout_sec: Optional[int] = None,
+) -> Tuple[Dict[str, Any], Optional[str]]:
+    """Copy a unified diff to the remote host and run ``git apply`` in ``work_dir``."""
+    if not remote_ssh_enabled():
+        return {}, "Remote SSH is disabled (set SKILLFLOW_REMOTE_SSH_ENABLED=1)"
+
+    err = validate_host(host)
+    if err:
+        return {}, err
+
+    wd_err = validate_safe_path("work_dir", work_dir)
+    if wd_err:
+        return {}, wd_err
+
+    if not ssh_user:
+        return {}, "ssh_user is missing (set SKILLFLOW_REMOTE_SSH_USER or pass ssh_user in the request)"
+
+    if not identity_path or not os.path.isfile(identity_path):
+        return (
+            {},
+            "SSH identity file missing (set SKILLFLOW_REMOTE_SSH_IDENTITY to a readable private key path)",
+        )
+
+    diff_norm = (unified_diff or "").replace("\r\n", "\n")
+    verr, paths = remote_patch.validate_unified_diff(diff_norm)
+    if verr:
+        return {}, verr
+
+    remote_file = f"/tmp/skillflow-patch-{uuid.uuid4().hex}.patch"
+    wd_q = shlex.quote(work_dir)
+    rp_q = shlex.quote(remote_file)
+    inner = (
+        f"cd {wd_q} || exit 1; "
+        f"if ! git apply --check {rp_q}; then rc=$?; rm -f {rp_q}; exit $rc; fi; "
+        f"git apply {rp_q}; rc=$?; rm -f {rp_q}; exit $rc"
+    )
+
+    timeout = timeout_sec if timeout_sec is not None else _patch_apply_timeout_sec()
+    out_parts: List[str] = []
+    err_parts: List[str] = []
+
+    tmp_path: Optional[str] = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(prefix="skillflow-patch-", suffix=".patch", text=False)
+        with os.fdopen(fd, "wb") as tmp:
+            tmp.write(diff_norm.encode("utf-8"))
+
+        scp_cmd = build_scp_command(tmp_path, host, ssh_user, identity_path, remote_file)
+        log.info("remote_runner: scp patch -> %s:%s", host, remote_file)
+        scp_res = subprocess.run(
+            scp_cmd,
+            capture_output=True,
+            text=True,
+            timeout=min(timeout, 120),
+            check=False,
+        )
+        out_parts.append(scp_res.stdout or "")
+        err_parts.append(scp_res.stderr or "")
+        if scp_res.returncode != 0:
+            return {
+                "host": host,
+                "returncode": scp_res.returncode,
+                "stdout": "".join(out_parts),
+                "stderr": "".join(err_parts),
+                "paths_touched": paths,
+                "phase": "scp",
+            }, None
+
+        ssh_cmd = build_ssh_command(host, ssh_user, identity_path, inner)
+        log.info("remote_runner: git apply in %s", work_dir)
+        ssh_res = subprocess.run(
+            ssh_cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        out_parts.append(ssh_res.stdout or "")
+        err_parts.append(ssh_res.stderr or "")
+
+        return {
+            "host": host,
+            "returncode": ssh_res.returncode,
+            "stdout": "".join(out_parts),
+            "stderr": "".join(err_parts),
+            "paths_touched": paths,
+            "phase": "git_apply",
+        }, None
+
+    except subprocess.TimeoutExpired as exc:
+        out = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
+        err_b = (exc.stderr or "") if isinstance(exc.stderr, str) else ""
+        return {
+            "host": host,
+            "returncode": -1,
+            "timed_out": True,
+            "stdout": "".join(out_parts) + out,
+            "stderr": "".join(err_parts) + (err_b or f"patch pipeline timed out after {timeout}s"),
+            "paths_touched": paths,
+        }, None
+
+    except FileNotFoundError:
+        return {}, "ssh or scp executable not found; install OpenSSH client on the SkillFlow host"
+
+    except OSError as exc:
+        return {}, f"Failed to run scp/ssh: {exc}"
+
+    finally:
+        if tmp_path and os.path.isfile(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass

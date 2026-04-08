@@ -33,3 +33,9 @@ gitlab_branch: main
 # SKILLFLOW_REMOTE_SSH_TIMEOUT_SEC=3600
 # SKILLFLOW_REMOTE_SSH_HOST_ALLOWLIST=linsee.dyn.nesc.nokia.net,.linsee.example.net
 # SKILLFLOW_REMOTE_SSH_USE_KNOWN_HOSTS_ONLY=1   # optional: StrictHostKeyChecking=yes
+#
+# Phase 2 (git apply) / Phase 3 (LLM suggest diff):
+# SKILLFLOW_REMOTE_PATCH_MAX_BYTES=524288
+# SKILLFLOW_REMOTE_PATCH_TIMEOUT_SEC=180
+# SKILLFLOW_REMOTE_AGENT_MAX_ITERATIONS=8   # suggest-patch iteration_index must be 0 .. max-1
+# SKILLFLOW_REMOTE_SUGGEST_PATCH_ENABLED=1  # set 0 to disable POST /api/remote/nrm-workflow/suggest-patch
