@@ -464,6 +464,8 @@ def test_icfs_use_case_maps_to_nrm_coding_workflow(
         icfs = next(x for x in uc_list if x.get("id") == "icfs-to-code-ut-sct")
         assert icfs.get("available") is True
         input_names = {i.get("name") for i in (icfs.get("inputs") or [])}
+        assert "gerrit_change_id" in input_names
+        assert "icfs_attachment" not in input_names
         assert "linsee_ssh_host" in input_names
         assert "work_dir" in input_names
         assert "repo_name" in input_names
@@ -483,6 +485,7 @@ def test_icfs_use_case_maps_to_nrm_coding_workflow(
                     "use_case_id": "icfs-to-code-ut-sct",
                     "user_input": "implement from ICFS",
                     "input_params": {
+                        "gerrit_change_id": "12345",
                         "linsee_ssh_host": "hzlinc01-boam.linsee.dyn.nesc.nokia.net",
                         "work_dir": "/tmp/ws",
                         "repo_name": "demo_repo",
@@ -497,6 +500,8 @@ def test_icfs_use_case_maps_to_nrm_coding_workflow(
         mock_ask.assert_called_once()
         sent = mock_ask.call_args[0][0]
         assert "SkillFlow does not run SSH" in sent
+        assert "Gerrit" in sent
+        assert "gerrit_change_id" in sent
         assert "linsee_ssh_host" in sent
 
 

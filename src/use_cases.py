@@ -43,15 +43,25 @@ FIXED_USE_CASE_DEFINITIONS: List[Dict[str, Any]] = [
             "Assume the user will SSH to the LinSee host they provide, then run all nrm/scripts "
             "only under the given work_dir and repo_name on that remote machine — not on the "
             "SkillFlow host.\n"
+            "ICFS/PFS is expected via Gerrit (change ID below); SkillFlow does not fetch Gerrit — "
+            "the user reads the patch diff on LinSee per the skill.\n"
             "上下文：SkillFlow 服务端不会代 SSH 或执行 nrm。请假定用户会登录其提供的 LinSee 主机，"
             "且仅在所给 work_dir / repo_name 对应的远程仓库环境中执行 nrm 与 skill 中的脚本。"
+            "规格说明通过 Gerrit change ID 提供；本平台不拉取 Gerrit，需在 LinSee 上按 skill 阅读 patch。"
         ),
         "inputs": [
             {
-                "name": "icfs_attachment",
-                "type": "file",
-                "label": "ICFS document (optional)",
-                "accept": ".md,.txt,.pdf,.doc,.docx,.xml,.json",
+                "name": "gerrit_change_id",
+                "type": "text",
+                "label": "Gerrit ICFS/PFS change ID",
+                "placeholder": "e.g. 12345 / change number (read patch diff on LinSee)",
+                "description": (
+                    "Read specification (if from Gerrit). If the user provides a Gerrit ICFS/PFS "
+                    "change ID, read the patch diff → extract interface definitions, method "
+                    "signatures, expected behavior, error handling rules. "
+                    "SkillFlow does not connect to Gerrit; use this ID in your prompt and follow "
+                    "the skill on the LinSee host."
+                ),
             },
             {
                 "name": "language_stack",
