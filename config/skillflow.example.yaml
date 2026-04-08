@@ -24,3 +24,12 @@ gitlab_branch: main
 
 # --- Logging ---
 # log_level: INFO
+
+# --- Phase-1 remote nrm (LinSee via SSH) — configure via environment only ---
+# SKILLFLOW_REMOTE_SSH_ENABLED=1          # off by default
+# SKILLFLOW_REMOTE_SSH_IDENTITY=/path/to/key   # private key on SkillFlow host
+# SKILLFLOW_REMOTE_SSH_USER=youruser
+# SKILLFLOW_REMOTE_NRM_SCRIPTS=$HOME/.copilot/skills/nrm-coding-workflow/scripts
+# SKILLFLOW_REMOTE_SSH_TIMEOUT_SEC=3600
+# SKILLFLOW_REMOTE_SSH_HOST_ALLOWLIST=linsee.dyn.nesc.nokia.net,.linsee.example.net
+# SKILLFLOW_REMOTE_SSH_USE_KNOWN_HOSTS_ONLY=1   # optional: StrictHostKeyChecking=yes

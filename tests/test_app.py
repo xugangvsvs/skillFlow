@@ -1,6 +1,7 @@
 import pytest
 import json
 import io
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 from src.app import create_app
@@ -550,3 +551,98 @@ def test_analyze_stream_accepts_use_case_id(client_example_uc_yaml):
     assert len(data_lines) == 1
     payload = json.loads(data_lines[0][6:])
     assert payload["chunk"] == "streamed via uc"
+
+
+def test_remote_nrm_workflow_status(client):
+    response = client.get("/api/remote/nrm-workflow/status")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert "enabled" in data
+    assert "identity_configured" in data
+    assert "ssh_user_configured" in data
+    assert isinstance(data.get("allowed_actions"), list)
+
+
+def test_remote_nrm_workflow_forbidden_when_disabled(client, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("SKILLFLOW_REMOTE_SSH_ENABLED", raising=False)
+    response = client.post(
+        "/api/remote/nrm-workflow",
+        json={
+            "use_case_id": "icfs-to-code-ut-sct",
+            "linsee_ssh_host": "h.example.net",
+            "work_dir": "/w",
+            "repo_name": "r",
+            "remote_action": "dev_status",
+            "remote_run_confirmed": True,
+        },
+        content_type="application/json",
+    )
+    assert response.status_code == 403
+
+
+def test_remote_nrm_workflow_requires_confirmation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("SKILLFLOW_REMOTE_SSH_ENABLED", "1")
+    key = tmp_path / "id_rsa"
+    key.write_text("k", encoding="utf-8")
+    monkeypatch.setenv("SKILLFLOW_REMOTE_SSH_IDENTITY", str(key))
+    monkeypatch.setenv("SKILLFLOW_REMOTE_SSH_USER", "u")
+    cfg = tmp_path / "skillflow-test.yaml"
+    cfg.write_text("log_level: INFO\n", encoding="utf-8")
+    monkeypatch.setenv("SKILLFLOW_CONFIG", str(cfg))
+    monkeypatch.delenv("GITLAB_REPO_URL", raising=False)
+    app = create_app(skill_path=str(REPO_ROOT / "dev-skills"))
+    app.config["TESTING"] = True
+    with app.test_client() as c:
+        response = c.post(
+            "/api/remote/nrm-workflow",
+            json={
+                "use_case_id": "icfs-to-code-ut-sct",
+                "linsee_ssh_host": "h.example.net",
+                "work_dir": "/w",
+                "repo_name": "r",
+                "remote_action": "dev_status",
+                "remote_run_confirmed": False,
+            },
+            content_type="application/json",
+        )
+    assert response.status_code == 400
+
+
+@patch("src.remote_runner.subprocess.run")
+def test_remote_nrm_workflow_post_success(
+    mock_run,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("SKILLFLOW_REMOTE_SSH_ENABLED", "1")
+    key = tmp_path / "id_rsa"
+    key.write_text("k", encoding="utf-8")
+    monkeypatch.setenv("SKILLFLOW_REMOTE_SSH_IDENTITY", str(key))
+    monkeypatch.setenv("SKILLFLOW_REMOTE_SSH_USER", "u")
+    monkeypatch.delenv("SKILLFLOW_REMOTE_SSH_HOST_ALLOWLIST", raising=False)
+    mock_run.return_value = subprocess.CompletedProcess(
+        args=[], returncode=0, stdout="REMOTE_OK\n", stderr=""
+    )
+    cfg = tmp_path / "skillflow-test.yaml"
+    cfg.write_text("log_level: INFO\n", encoding="utf-8")
+    monkeypatch.setenv("SKILLFLOW_CONFIG", str(cfg))
+    monkeypatch.delenv("GITLAB_REPO_URL", raising=False)
+    app = create_app(skill_path=str(REPO_ROOT / "dev-skills"))
+    app.config["TESTING"] = True
+    with app.test_client() as c:
+        response = c.post(
+            "/api/remote/nrm-workflow",
+            json={
+                "use_case_id": "icfs-to-code-ut-sct",
+                "linsee_ssh_host": "h.example.net",
+                "work_dir": "/w",
+                "repo_name": "r",
+                "remote_action": "dev_status",
+                "remote_run_confirmed": True,
+            },
+            content_type="application/json",
+        )
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data.get("stdout") == "REMOTE_OK\n"
+    assert data.get("returncode") == 0

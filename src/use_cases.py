@@ -45,8 +45,10 @@ FIXED_USE_CASE_DEFINITIONS: List[Dict[str, Any]] = [
             "SkillFlow host.\n"
             "ICFS/PFS is expected via Gerrit (change ID below); SkillFlow does not fetch Gerrit — "
             "the user reads the patch diff on LinSee per the skill.\n"
+            "Optional: when the server enables SKILLFLOW_REMOTE_SSH_ENABLED, the Web UI can run "
+            "whitelisted dev-status/build/UT scripts on LinSee via SSH (Phase 1); this is off by default.\n"
             "上下文：SkillFlow 服务端不会代 SSH 或执行 nrm。请假定用户会登录其提供的 LinSee 主机，"
-            "且仅在所给 work_dir / repo_name 对应的远程仓库环境中执行 nrm 与 skill 中的脚本。"
+            "且仅在所给 work_dir / repo_name 对应的远程仓库环境中执行 nrm 与 skill 中的脚本。\n"
             "规格说明通过 Gerrit change ID 提供；本平台不拉取 Gerrit，需在 LinSee 上按 skill 阅读 patch。"
         ),
         "inputs": [

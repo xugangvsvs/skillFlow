@@ -238,6 +238,46 @@
       font-size: 13px;
     }
 
+    .remote-run-panel {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .remote-run-panel label {
+      display: grid;
+      gap: 4px;
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .remote-run-panel select,
+    .remote-run-panel input[type="text"] {
+      font: inherit;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .remote-run-panel .confirm-row {
+      font-weight: 400;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .remote-run-panel .confirm-row input {
+      width: auto;
+    }
+
+    #remote-run-btn {
+      justify-self: start;
+    }
+
     #terminal-output {
       margin: 0;
       padding: 16px;
@@ -285,6 +325,27 @@
       <div class="card toolbar">
         <p id="selected-skill">Selected: none</p>
         <div id="dynamic-inputs"></div>
+        <div id="remote-run-panel" class="remote-run-panel" hidden>
+          <p class="note">
+            Phase 1 — run a whitelisted nrm-coding-workflow script on LinSee via SkillFlow (SSH).
+            Requires <code>SKILLFLOW_REMOTE_SSH_ENABLED=1</code>, identity key, and SSH user on the server.
+          </p>
+          <label for="remote-action">Remote action</label>
+          <select id="remote-action" aria-label="Remote action">
+            <option value="dev_status">dev_status (dev-status.sh)</option>
+            <option value="dev_build">dev_build (dev-build.sh)</option>
+            <option value="dev_ut">dev_ut (dev-ut.sh)</option>
+          </select>
+          <div id="ut-filter-row" hidden>
+            <label for="ut-test-filter">UT test filter (dev_ut only)</label>
+            <input id="ut-test-filter" type="text" placeholder="*">
+          </div>
+          <label class="confirm-row">
+            <input type="checkbox" id="remote-run-confirmed">
+            <span>I confirm running this script on the LinSee host above</span>
+          </label>
+          <button type="button" id="remote-run-btn">Run remote script</button>
+        </div>
         <textarea id="analysis-input" placeholder="Enter logs or analysis request..."></textarea>
         <input id="log-file" type="file" accept=".log,.txt,.md,.json,.xml,.csv">
         <div class="actions">
@@ -319,6 +380,55 @@
       let selectedUseCaseId = "";
       let allSkills = [];
       let allUseCases = [];
+      let remoteNrmStatus = { enabled: false, allowed_actions: [] };
+
+      const remoteRunPanelEl = document.getElementById("remote-run-panel");
+      const remoteActionEl = document.getElementById("remote-action");
+      const utFilterRowEl = document.getElementById("ut-filter-row");
+      const utTestFilterEl = document.getElementById("ut-test-filter");
+      const remoteRunConfirmedEl = document.getElementById("remote-run-confirmed");
+      const remoteRunBtnEl = document.getElementById("remote-run-btn");
+
+      function collectDynamicInputParams() {
+        const inputParams = {};
+        let dynamicFile = null;
+        const dynamicFields = dynamicInputsEl.querySelectorAll("[data-input-name]");
+        dynamicFields.forEach(el => {
+          const name = el.dataset.inputName;
+          const type = el.dataset.inputType;
+          if (!name) {
+            return;
+          }
+          if (type === "file") {
+            const picked = el.files && el.files.length ? el.files[0] : null;
+            if (picked) {
+              inputParams[name] = picked.name;
+              if (!dynamicFile) {
+                dynamicFile = picked;
+              }
+            }
+            return;
+          }
+          if (el.value && String(el.value).trim()) {
+            inputParams[name] = String(el.value).trim();
+          }
+        });
+        return { inputParams: inputParams, dynamicFile: dynamicFile };
+      }
+
+      function updateRemotePanelVisibility() {
+        if (!remoteRunPanelEl) {
+          return;
+        }
+        const show =
+          remoteNrmStatus.enabled &&
+          browseMode === "usecases" &&
+          selectedUseCaseId === "icfs-to-code-ut-sct";
+        remoteRunPanelEl.hidden = !show;
+        if (remoteActionEl && utFilterRowEl) {
+          utFilterRowEl.hidden = remoteActionEl.value !== "dev_ut";
+        }
+      }
 
       function appendTerminal(text, isError) {
         const line = isError ? "[Error] " + text : text;
@@ -442,6 +552,7 @@
           skillListEl.innerHTML = "<li class='note'>No use cases available.</li>";
           selectedSkillEl.textContent = "Selected: none";
           renderDynamicInputs([]);
+          updateRemotePanelVisibility();
           return;
         }
         let picked = false;
@@ -461,6 +572,7 @@
             selectedUseCaseId = uc.id || "";
             selectedSkillEl.textContent = "Selected use case: " + (uc.title || selectedUseCaseId);
             renderDynamicInputs(uc.inputs || []);
+            updateRemotePanelVisibility();
           });
           if (!picked && avail && uc.id) {
             li.classList.add("active");
@@ -475,6 +587,7 @@
           selectedSkillEl.textContent = "Selected: none (no available use cases)";
           renderDynamicInputs([]);
         }
+        updateRemotePanelVisibility();
       }
 
       function setBrowseMode(mode) {
@@ -490,6 +603,7 @@
         } else {
           renderUseCases(allUseCases);
         }
+        updateRemotePanelVisibility();
       }
 
       function filterList() {
@@ -509,6 +623,7 @@
         }
         if (!keyword) {
           renderUseCases(allUseCases);
+          updateRemotePanelVisibility();
           return;
         }
         const filtered = allUseCases.filter(uc => {
@@ -518,11 +633,22 @@
           return title.includes(keyword) || desc.includes(keyword) || id.includes(keyword);
         });
         renderUseCases(filtered);
+        updateRemotePanelVisibility();
       }
 
       async function loadAll() {
         let skillsOk = false;
         let ucOk = false;
+        try {
+          const resRemote = await fetch("/api/remote/nrm-workflow/status");
+          if (resRemote.ok) {
+            remoteNrmStatus = await resRemote.json();
+          } else {
+            remoteNrmStatus = { enabled: false, allowed_actions: [] };
+          }
+        } catch (error) {
+          remoteNrmStatus = { enabled: false, allowed_actions: [] };
+        }
         try {
           const resSkills = await fetch("/api/skills");
           const dataSkills = await resSkills.json();
@@ -557,6 +683,7 @@
         } else if (browseMode === "skills" && !skillsOk) {
           selectedSkillEl.textContent = "Selected: none";
         }
+        updateRemotePanelVisibility();
       }
 
       async function analyze() {
@@ -583,29 +710,9 @@
         }
 
         const selectedFile = logFileEl.files && logFileEl.files.length ? logFileEl.files[0] : null;
-        const inputParams = {};
-        let dynamicFile = null;
-        const dynamicFields = dynamicInputsEl.querySelectorAll("[data-input-name]");
-        dynamicFields.forEach(el => {
-          const name = el.dataset.inputName;
-          const type = el.dataset.inputType;
-          if (!name) {
-            return;
-          }
-          if (type === "file") {
-            const picked = el.files && el.files.length ? el.files[0] : null;
-            if (picked) {
-              inputParams[name] = picked.name;
-              if (!dynamicFile) {
-                dynamicFile = picked;
-              }
-            }
-            return;
-          }
-          if (el.value && String(el.value).trim()) {
-            inputParams[name] = String(el.value).trim();
-          }
-        });
+        const collected = collectDynamicInputParams();
+        const inputParams = collected.inputParams;
+        const dynamicFile = collected.dynamicFile;
 
         const effectiveFile = selectedFile || dynamicFile;
         if (effectiveFile) {
@@ -648,6 +755,69 @@
           setBusy(false);
         }
       }
+
+      async function runRemoteNrmScript() {
+        if (!remoteNrmStatus.enabled) {
+          appendTerminal("Remote SSH is not enabled on the server.", true);
+          return;
+        }
+        if (browseMode !== "usecases" || selectedUseCaseId !== "icfs-to-code-ut-sct") {
+          appendTerminal("Select the ICFS code / UT / SCT use case first.", true);
+          return;
+        }
+        if (!remoteRunConfirmedEl.checked) {
+          appendTerminal("Check the confirmation box to run a remote script.", true);
+          return;
+        }
+        const params = collectDynamicInputParams().inputParams;
+        const host = params.linsee_ssh_host;
+        const wd = params.work_dir;
+        const rn = params.repo_name;
+        if (!host || !wd || !rn) {
+          appendTerminal("Fill LinSee SSH host, remote work directory, and repository name first.", true);
+          return;
+        }
+        const action = remoteActionEl.value;
+        const ut = (utTestFilterEl.value || "").trim() || "*";
+        setBusy(true);
+        appendTerminal("[System] Remote run: " + action + " on " + host);
+        try {
+          const response = await fetch("/api/remote/nrm-workflow", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              use_case_id: "icfs-to-code-ut-sct",
+              linsee_ssh_host: host,
+              work_dir: wd,
+              repo_name: rn,
+              remote_action: action,
+              remote_run_confirmed: true,
+              ut_test_filter: ut,
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            appendTerminal(data.error || "Remote run failed", true);
+            return;
+          }
+          appendTerminal("[Remote] exit=" + data.returncode + (data.timed_out ? " (timed out)" : ""));
+          if (data.stdout) {
+            appendTerminal("[Remote stdout]\n" + data.stdout);
+          }
+          if (data.stderr) {
+            appendTerminal("[Remote stderr]\n" + data.stderr, data.returncode !== 0);
+          }
+        } catch (error) {
+          appendTerminal("Network error: " + error.message, true);
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      remoteActionEl.addEventListener("change", function () {
+        utFilterRowEl.hidden = remoteActionEl.value !== "dev_ut";
+      });
+      remoteRunBtnEl.addEventListener("click", runRemoteNrmScript);
 
       tabSkillsEl.addEventListener("click", function () { setBrowseMode("skills"); });
       tabUcEl.addEventListener("click", function () { setBrowseMode("usecases"); });

@@ -21,6 +21,7 @@ import os
 from src.logging_context import CorrelationIdFilter, correlation_id_var, get_or_create_correlation_id
 from src.skillflow_config import load_skillflow_config, pick_str
 from src.skill_paths import resolve_skill_repo_dir
+from src import remote_runner
 from src.use_cases import apply_use_case, prepare_use_cases
 
 log = logging.getLogger("skillflow.app")
@@ -320,6 +321,77 @@ def create_app(
     def get_use_cases():
         """List business use cases (each maps to a loaded skill by name)."""
         return jsonify(use_cases_list), 200
+
+    @app.route("/api/remote/nrm-workflow/status", methods=["GET"])
+    def remote_nrm_workflow_status():
+        """Whether Phase-1 remote SSH execution is enabled and minimally configured."""
+        ident = remote_runner.default_identity_path()
+        return jsonify(
+            {
+                "enabled": remote_runner.remote_ssh_enabled(),
+                "identity_configured": bool(ident and os.path.isfile(ident)),
+                "ssh_user_configured": bool(remote_runner.default_ssh_user()),
+                "allowed_actions": sorted(remote_runner.NRM_WORKFLOW_ACTIONS.keys()),
+            }
+        ), 200
+
+    @app.route("/api/remote/nrm-workflow", methods=["POST"])
+    def remote_nrm_workflow():
+        """Run a whitelisted nrm-coding-workflow script on LinSee via SSH (Phase 1).
+
+        JSON body: use_case_id (must be icfs-to-code-ut-sct), linsee_ssh_host, work_dir,
+        repo_name, remote_action (dev_status|dev_build|dev_ut), remote_run_confirmed (true).
+        Optional: ssh_user, remote_scripts_dir, ut_test_filter (for dev_ut).
+
+        Requires SKILLFLOW_REMOTE_SSH_ENABLED=1, SKILLFLOW_REMOTE_SSH_IDENTITY, and
+        SKILLFLOW_REMOTE_SSH_USER (or ssh_user per request). Optional host allowlist via
+        SKILLFLOW_REMOTE_SSH_HOST_ALLOWLIST.
+        """
+        if not remote_runner.remote_ssh_enabled():
+            return jsonify(
+                {
+                    "error": (
+                        "Remote SSH is disabled. Set SKILLFLOW_REMOTE_SSH_ENABLED=1 and configure "
+                        "SKILLFLOW_REMOTE_SSH_IDENTITY (and user)."
+                    )
+                }
+            ), 403
+
+        data = request.get_json(silent=True) or {}
+        if data.get("remote_run_confirmed") is not True:
+            return jsonify({"error": "remote_run_confirmed must be true"}), 400
+
+        uc = str(data.get("use_case_id") or "").strip()
+        if uc != "icfs-to-code-ut-sct":
+            return jsonify({"error": "use_case_id must be icfs-to-code-ut-sct"}), 400
+
+        host = str(data.get("linsee_ssh_host") or "").strip()
+        work_dir = str(data.get("work_dir") or "").strip()
+        repo_name = str(data.get("repo_name") or "").strip()
+        action = str(data.get("remote_action") or data.get("action") or "").strip()
+        scripts_dir = str(data.get("remote_scripts_dir") or "").strip() or remote_runner.default_scripts_dir()
+        if (data.get("remote_scripts_dir") or "").strip():
+            sd_err = remote_runner.validate_safe_path("remote_scripts_dir", scripts_dir)
+            if sd_err:
+                return jsonify({"error": sd_err}), 400
+
+        ssh_user = str(data.get("ssh_user") or "").strip() or remote_runner.default_ssh_user()
+        ut_filter = str(data.get("ut_test_filter") or "*").strip() or "*"
+
+        ident = remote_runner.default_identity_path()
+        payload, err = remote_runner.run_nrm_workflow_remote(
+            host=host,
+            ssh_user=ssh_user,
+            identity_path=ident,
+            scripts_dir=scripts_dir,
+            work_dir=work_dir,
+            repo_name=repo_name,
+            action=action,
+            ut_test_filter=ut_filter,
+        )
+        if err:
+            return jsonify({"error": err}), 400
+        return jsonify(payload), 200
 
     @app.route("/health", methods=["GET"])
     def health() -> Any:
