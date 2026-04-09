@@ -20,7 +20,7 @@ import os
 
 from src.logging_context import CorrelationIdFilter, correlation_id_var, get_or_create_correlation_id
 from src.skillflow_config import load_skillflow_config, pick_str
-from src.skill_paths import resolve_skill_repo_dir
+from src.skill_paths import resolve_skill_repo_dir, supplement_dev_skills_dirs
 from src.use_cases import apply_use_case, prepare_use_cases
 
 log = logging.getLogger("skillflow.app")
@@ -118,6 +118,7 @@ def create_app(
     gitlab_branch = pick_str("GITLAB_BRANCH", file_cfg, "gitlab_branch", "main")
     skills_dir = resolve_skill_repo_dir(project_root, skill_path, file_cfg)
     skills_dir.parent.mkdir(parents=True, exist_ok=True)
+    supplement_paths = supplement_dev_skills_dirs(project_root, skill_path, file_cfg)
 
     llm_url = pick_str("LLM_API_URL", file_cfg, "llm_api_url", _DEFAULT_LLM_API_URL)
     llm_model = pick_str("LLM_MODEL", file_cfg, "llm_model", _DEFAULT_LLM_MODEL)
@@ -127,6 +128,7 @@ def create_app(
         repo_path=str(skills_dir),
         gitlab_repo_url=(gitlab_repo_url or None),
         gitlab_branch=gitlab_branch,
+        supplement_repo_paths=supplement_paths,
     )
     skills = scanner.scan()
     executor = CopilotExecutor(api_url=llm_url, model=llm_model)

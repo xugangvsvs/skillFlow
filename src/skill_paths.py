@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, List, Mapping, Optional
 
 from src.skillflow_config import pick_str
 
@@ -46,3 +46,32 @@ def resolve_skill_repo_dir(
         return (project_root / "var" / "gitlab-skills").resolve()
 
     return (project_root / "dev-skills").resolve()
+
+
+def supplement_dev_skills_dirs(
+    project_root: Path,
+    skill_path_override: str = "",
+    file_cfg: Optional[Mapping[str, Any]] = None,
+) -> List[str]:
+    """Paths to merge after the GitLab cache when using remote skills without ``SKILLS_PATH``.
+
+    Returns ``[ "<project>/dev-skills" ]`` when:
+
+    - ``GITLAB_REPO_URL`` / ``gitlab_repo_url`` is set (GitLab is the primary tree), and
+    - ``skill_path_override`` is empty, and
+    - ``SKILLS_PATH`` / ``skills_path`` is unset, and
+    - ``<project_root>/dev-skills`` exists as a directory.
+
+    Otherwise returns an empty list (single-source mode).
+    """
+    fc = file_cfg or {}
+    if (skill_path_override or "").strip():
+        return []
+    if pick_str("SKILLS_PATH", fc, "skills_path", "").strip():
+        return []
+    if not pick_str("GITLAB_REPO_URL", fc, "gitlab_repo_url", "").strip():
+        return []
+    dev = (project_root / "dev-skills").resolve()
+    if not dev.is_dir():
+        return []
+    return [str(dev)]

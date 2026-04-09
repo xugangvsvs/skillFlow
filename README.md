@@ -139,11 +139,13 @@ Skills are discovered from any `**/SKILL.md` under the resolved skills directory
 
 1. For private repos, set `GITLAB_TOKEN` (PAT). It is embedded in the clone URL and never logged.
 2. Leave `skills_path` / `SKILLS_PATH` **unset** so the app can clone/pull into the default cache: `<project_root>/var/gitlab-skills` (override with `gitlab_skills_cache` / `GITLAB_SKILLS_CACHE` if needed).
-3. On each process start, SkillFlow runs `git pull --ff-only` if the cache already exists, or `git clone` on first run.
+3. On each process start, SkillFlow runs `git pull --ff-only` if the cache already exists, or `git clone` on first run. If that sync **fails** (network, auth, etc.), the app **still starts**: it logs a warning and scans whatever is already in the cache directory.
 
-If you **set `skills_path` / `SKILLS_PATH`**, that directory is used as-is and **GitLab sync is not run** (offline / custom layout).
+**Merge with app `dev-skills/`:** When GitLab is enabled **and** `skills_path` / `SKILLS_PATH` is **unset**, SkillFlow also loads `**/SKILL.md` under `<project_root>/dev-skills` and **merges** them with the GitLab tree. Skills are keyed by front-matter **`name`** (case-insensitive): if the same name exists in both places, the **GitLab** copy wins; `dev-skills` only adds names that are missing from the clone. So you can keep local-only skills (e.g. samples) beside the remote repo without duplicating everything in GitLab.
 
-**Use case shows “unavailable”:** the Web UI marks a scenario unavailable when no loaded `SKILL.md` has a **`name`** matching that use case’s `skill_name` in [`src/use_cases.py`](src/use_cases.py). Editing files under **`dev-skills/`** in the SkillFlow repo has no effect while **`GITLAB_REPO_URL`** (or `gitlab_repo_url` in YAML) is set, because skills are read from the **GitLab clone** (default `var/gitlab-skills`). Fix: add or update the skill in that GitLab repository and restart the app, **or** point `SKILLS_PATH` / `skills_path` at a directory that contains the matching `SKILL.md`.
+If you **set `skills_path` / `SKILLS_PATH`**, that directory is the **only** skill root (no GitLab sync, no automatic `dev-skills` merge).
+
+**Use case shows “unavailable”:** no loaded skill has a **`name`** matching that use case’s `skill_name` in [`src/use_cases.py`](src/use_cases.py). After a merge, check both the GitLab cache and `dev-skills/` for the matching `name`, or set `SKILLS_PATH` to a single tree that contains it.
 
 Example (environment variables, local run from the repository root):
 

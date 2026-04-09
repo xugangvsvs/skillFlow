@@ -109,9 +109,16 @@ def test_scan_with_gitlab_pulls_when_cache_exists(tmp_path):
     assert len(pull_calls) == 1
 
 
-def test_scan_with_gitlab_returns_actionable_error_on_git_failure(tmp_path):
-    """Git command failures should surface with clear actionable context."""
+def test_scan_with_gitlab_continues_on_git_failure_with_supplement(tmp_path, caplog):
+    """Git sync failure logs a warning; supplement trees still load."""
+    caplog.set_level("WARNING")
     cache_dir = tmp_path / "cache-dev-skills"
+    cache_dir.mkdir()
+    supp_root = tmp_path / "dev-skills"
+    skill_dir = supp_root / "local"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\nname: only-local\n---\n", encoding="utf-8")
+
     with patch("src.scanner.subprocess.run") as mock_run:
         mock_run.side_effect = subprocess.CalledProcessError(
             returncode=1,
@@ -122,10 +129,45 @@ def test_scan_with_gitlab_returns_actionable_error_on_git_failure(tmp_path):
             repo_path=str(cache_dir),
             gitlab_repo_url="https://git.example.com/group/dev-skills.git",
             gitlab_branch="main",
+            supplement_repo_paths=[str(supp_root)],
         )
+        skills = scanner.scan()
 
-        with pytest.raises(RuntimeError) as exc:
-            scanner.scan()
+    assert len(skills) == 1
+    assert skills[0]["name"] == "only-local"
+    assert any("GitLab skill sync failed" in r.message for r in caplog.records)
+    assert any("repository not found" in r.message for r in caplog.records)
 
-    assert "GitLab skill sync failed" in str(exc.value)
-    assert "repository not found" in str(exc.value)
+
+def test_scan_merges_supplement_without_overlapping_names(tmp_path):
+    """Supplement path adds skills whose names are not in the primary tree."""
+    primary = tmp_path / "primary"
+    supp = tmp_path / "supp"
+    (primary / "a").mkdir(parents=True)
+    (primary / "a" / "SKILL.md").write_text("---\nname: from-primary\n---\n", encoding="utf-8")
+    (supp / "b").mkdir(parents=True)
+    (supp / "b" / "SKILL.md").write_text("---\nname: from-supplement\n---\n", encoding="utf-8")
+    scanner = SkillScanner(str(primary), supplement_repo_paths=[str(supp)])
+    skills = scanner.scan()
+    names = {s["name"] for s in skills}
+    assert names == {"from-primary", "from-supplement"}
+
+
+def test_scan_merge_duplicate_name_keeps_primary(tmp_path):
+    """When primary and supplement define the same ``name``, primary wins."""
+    primary = tmp_path / "primary"
+    supp = tmp_path / "supp"
+    primary.mkdir()
+    supp.mkdir()
+    (primary / "SKILL.md").write_text(
+        "---\nname: dup\nfrom_tree: primary\n---\n",
+        encoding="utf-8",
+    )
+    (supp / "SKILL.md").write_text(
+        "---\nname: dup\nfrom_tree: supplement\n---\n",
+        encoding="utf-8",
+    )
+    scanner = SkillScanner(str(primary), supplement_repo_paths=[str(supp)])
+    skills = scanner.scan()
+    assert len(skills) == 1
+    assert skills[0]["from_tree"] == "primary"
