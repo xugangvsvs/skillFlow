@@ -37,7 +37,8 @@ FIXED_USE_CASE_DEFINITIONS: List[Dict[str, Any]] = [
             "Generate implementation code, unit tests (UT), and system/scenario test (SCT) "
             "artifacts from an ICFS."
         ),
-        "skill_name": "icfs-codegen-ut-sct",
+        # Must match SKILL.md ``name`` under icfs-to-code-ut-sct/ (same id as use case is fine).
+        "skill_name": "icfs-to-code-ut-sct",
         "prompt_prefix": (
             "Context: SkillFlow only generates Markdown (implementation drafts, UT design, SCT "
             "design) from the skill and your input. It does not compile code, run tests, SSH, or "

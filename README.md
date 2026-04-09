@@ -76,8 +76,7 @@ skillFlow/
 │   ├── analyze-ims2/        # Example IMS2 skill
 │   ├── efs-to-pfs/          # Workflow samples (Use Cases tab)
 │   ├── pfs-to-icfs/
-│   ├── icfs-codegen-ut-sct/   # ICFS→code/UT/SCT use case (LLM-only)
-│   ├── icfs-to-code-ut-sct/   # legacy sample skill folder (optional)
+│   ├── icfs-to-code-ut-sct/   # ICFS→code/UT/SCT use case (LLM-only Markdown)
 │   └── analyze-pronto/      # Each folder contains SKILL.md
 ├── config/
 │   ├── README.md            # Pointers: skillflow.yaml setup
@@ -124,7 +123,7 @@ You can store non-secret defaults in YAML instead of exporting many environment 
 
 Use cases are **fixed in source** ([`src/use_cases.py`](src/use_cases.py) — `FIXED_USE_CASE_DEFINITIONS`). They are not loaded from GitLab or YAML. Each entry’s `skill_name` must match the **`name`** field in a `SKILL.md` under `dev-skills/` or your GitLab-synced tree (and, for tool-first runs, the same key in `config/skill_adapters.yaml`).
 
-The default catalog has four scenarios: **EFS→PFS**, **PFS→ICFS**, **ICFS→code/UT/SCT**, and **Pronto analysis**, with matching sample skills under `dev-skills/`. The **ICFS→code/UT/SCT** scenario uses the local **`icfs-codegen-ut-sct`** skill for LLM-generated Markdown only (no dependency on the GitLab `nrm-coding-workflow` skill for Analyze). To change titles or mappings, edit `FIXED_USE_CASE_DEFINITIONS` and redeploy. When using GitLab, keep those `name` values in your remote `SKILL.md` files or update the fixed list to match your repo.
+The default catalog has four scenarios: **EFS→PFS**, **PFS→ICFS**, **ICFS→code/UT/SCT**, and **Pronto analysis**, with matching sample skills under `dev-skills/`. The **ICFS→code/UT/SCT** use case maps to skill name **`icfs-to-code-ut-sct`** (folder `dev-skills/icfs-to-code-ut-sct/`) so it stays available when skills are synced only from GitLab — ensure that `SKILL.md` `name` matches in your skills repo. To change titles or mappings, edit `FIXED_USE_CASE_DEFINITIONS` and redeploy.
 
 1. **Web UI:** open the **Use Cases** tab, pick a scenario, fill dynamic inputs (from the skill metadata), then **Analyze**.
 2. **API:** `GET /api/use-cases` returns `{ id, title, description, inputs, available }`. Submit analysis with JSON or multipart field **`use_case_id`** (and **`user_input`**). Do not send **`skill_name`** in the same request as **`use_case_id`**.

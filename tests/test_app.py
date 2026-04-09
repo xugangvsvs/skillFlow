@@ -439,15 +439,15 @@ def test_analyze_use_case_prompt_prefix_in_prompt(tmp_path: Path, monkeypatch: p
     assert "user line" in sent
 
 
-def test_icfs_use_case_maps_to_icfs_codegen_ut_sct(
+def test_icfs_use_case_maps_to_icfs_to_code_ut_sct(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Fixed use case icfs-to-code-ut-sct resolves to skill icfs-codegen-ut-sct when present."""
+    """Fixed use case icfs-to-code-ut-sct resolves to skill icfs-to-code-ut-sct when present."""
     skill_root = tmp_path / "skills"
-    skill_dir = skill_root / "icfs-codegen-ut-sct"
+    skill_dir = skill_root / "icfs-to-code-ut-sct"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(
-        "---\nname: icfs-codegen-ut-sct\ndescription: Test stub for use case mapping\n---\n\n# Stub\n",
+        "---\nname: icfs-to-code-ut-sct\ndescription: Test stub for use case mapping\n---\n\n# Stub\n",
         encoding="utf-8",
     )
     cfg = tmp_path / "skillflow-test.yaml"
@@ -496,7 +496,7 @@ def test_icfs_use_case_maps_to_icfs_codegen_ut_sct(
         assert response.status_code == 200
         mock_run.assert_called_once()
         _args, kwargs = mock_run.call_args
-        assert kwargs["skill_name"] == "icfs-codegen-ut-sct"
+        assert kwargs["skill_name"] == "icfs-to-code-ut-sct"
         mock_ask.assert_called_once()
         sent = mock_ask.call_args[0][0]
         assert "Markdown" in sent
