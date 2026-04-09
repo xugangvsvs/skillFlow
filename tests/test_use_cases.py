@@ -52,6 +52,14 @@ def test_build_use_case_index_unavailable_when_skill_missing() -> None:
     assert by_id["orphan"]["available"] is False
 
 
+def test_build_use_case_index_skill_name_case_insensitive() -> None:
+    skills = [{"name": "ICFS-To-Code-UT-SCT", "inputs": [{"name": "x", "type": "text"}]}]
+    definitions = [{"id": "uc", "title": "T", "skill_name": "icfs-to-code-ut-sct"}]
+    api_list, by_id = build_use_case_index(definitions, skills)
+    assert api_list[0]["available"] is True
+    assert by_id["uc"]["available"] is True
+
+
 def test_build_use_case_index_duplicate_id_skipped() -> None:
     definitions = [
         {"id": "dup", "title": "A", "skill_name": "s"},

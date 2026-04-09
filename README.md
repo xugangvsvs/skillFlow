@@ -143,6 +143,8 @@ Skills are discovered from any `**/SKILL.md` under the resolved skills directory
 
 If you **set `skills_path` / `SKILLS_PATH`**, that directory is used as-is and **GitLab sync is not run** (offline / custom layout).
 
+**Use case shows “unavailable”:** the Web UI marks a scenario unavailable when no loaded `SKILL.md` has a **`name`** matching that use case’s `skill_name` in [`src/use_cases.py`](src/use_cases.py). Editing files under **`dev-skills/`** in the SkillFlow repo has no effect while **`GITLAB_REPO_URL`** (or `gitlab_repo_url` in YAML) is set, because skills are read from the **GitLab clone** (default `var/gitlab-skills`). Fix: add or update the skill in that GitLab repository and restart the app, **or** point `SKILLS_PATH` / `skills_path` at a directory that contains the matching `SKILL.md`.
+
 Example (environment variables, local run from the repository root):
 
 ```bash

@@ -86,6 +86,20 @@ FIXED_USE_CASE_DEFINITIONS: List[Dict[str, Any]] = [
 ]
 
 
+def _find_skill_by_configured_name(
+    skill_by_name: Dict[str, Mapping[str, Any]],
+    skill_by_lower: Dict[str, Mapping[str, Any]],
+    skill_name: str,
+) -> Optional[Mapping[str, Any]]:
+    """Match use-case ``skill_name`` to a loaded skill (exact, then case-insensitive)."""
+    if not skill_name:
+        return None
+    hit = skill_by_name.get(skill_name)
+    if hit is not None:
+        return hit
+    return skill_by_lower.get(skill_name.lower())
+
+
 def build_use_case_index(
     definitions: List[Mapping[str, Any]],
     skills: List[Mapping[str, Any]],
@@ -96,10 +110,13 @@ def build_use_case_index(
     skill with matching ``skill_name``.
     """
     skill_by_name: Dict[str, Mapping[str, Any]] = {}
+    skill_by_lower: Dict[str, Mapping[str, Any]] = {}
     for s in skills:
         n = s.get("name")
         if n:
-            skill_by_name[str(n)] = s
+            key = str(n)
+            skill_by_name[key] = s
+            skill_by_lower[key.lower()] = s
 
     seen: set[str] = set()
     api_list: List[Dict[str, Any]] = []
@@ -120,8 +137,18 @@ def build_use_case_index(
         description = str(d.get("description") or "").strip()
         prompt_prefix = str(d.get("prompt_prefix") or "").strip()
 
-        skill = skill_by_name.get(skill_name) if skill_name else None
+        skill = _find_skill_by_configured_name(skill_by_name, skill_by_lower, skill_name)
         available = skill is not None
+        if skill_name and not available:
+            log.warning(
+                "use case %r expects skill_name %r but it was not among %d loaded skills. "
+                "If GITLAB_REPO_URL / gitlab_repo_url is set, skills come from that clone "
+                "(e.g. var/gitlab-skills), not from dev-skills/ in the app repo — add the "
+                "SKILL.md there or set SKILLS_PATH / skills_path to your local skills tree.",
+                uc_id,
+                skill_name,
+                len(skills),
+            )
 
         inputs_override = d.get("inputs")
         if isinstance(inputs_override, list) and len(inputs_override) > 0:
