@@ -1,7 +1,6 @@
 import pytest
 import json
 import io
-import subprocess
 from pathlib import Path
 from unittest.mock import patch
 from src.app import create_app
@@ -440,15 +439,15 @@ def test_analyze_use_case_prompt_prefix_in_prompt(tmp_path: Path, monkeypatch: p
     assert "user line" in sent
 
 
-def test_icfs_use_case_maps_to_nrm_coding_workflow(
+def test_icfs_use_case_maps_to_icfs_codegen_ut_sct(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Fixed use case icfs-to-code-ut-sct resolves to skill nrm-coding-workflow when present."""
+    """Fixed use case icfs-to-code-ut-sct resolves to skill icfs-codegen-ut-sct when present."""
     skill_root = tmp_path / "skills"
-    nrm_dir = skill_root / "nrm-coding-workflow"
-    nrm_dir.mkdir(parents=True)
-    (nrm_dir / "SKILL.md").write_text(
-        "---\nname: nrm-coding-workflow\ndescription: Test stub for use case mapping\n---\n\n# Stub\n",
+    skill_dir = skill_root / "icfs-codegen-ut-sct"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: icfs-codegen-ut-sct\ndescription: Test stub for use case mapping\n---\n\n# Stub\n",
         encoding="utf-8",
     )
     cfg = tmp_path / "skillflow-test.yaml"
@@ -466,10 +465,12 @@ def test_icfs_use_case_maps_to_nrm_coding_workflow(
         assert icfs.get("available") is True
         input_names = {i.get("name") for i in (icfs.get("inputs") or [])}
         assert "gerrit_change_id" in input_names
+        assert "language_stack" in input_names
+        assert "repo_layout_hint" in input_names
         assert "icfs_attachment" not in input_names
-        assert "linsee_ssh_host" in input_names
-        assert "work_dir" in input_names
-        assert "repo_name" in input_names
+        assert "linsee_ssh_host" not in input_names
+        assert "work_dir" not in input_names
+        assert "repo_name" not in input_names
 
         with patch("src.app.CopilotExecutor.ask_ai", return_value="ok") as mock_ask, patch(
             "src.app.SkillRunner.run_tool_if_configured",
@@ -487,9 +488,7 @@ def test_icfs_use_case_maps_to_nrm_coding_workflow(
                     "user_input": "implement from ICFS",
                     "input_params": {
                         "gerrit_change_id": "12345",
-                        "linsee_ssh_host": "hzlinc01-boam.linsee.dyn.nesc.nokia.net",
-                        "work_dir": "/tmp/ws",
-                        "repo_name": "demo_repo",
+                        "repo_layout_hint": "src/core",
                     },
                 },
                 content_type="application/json",
@@ -497,13 +496,13 @@ def test_icfs_use_case_maps_to_nrm_coding_workflow(
         assert response.status_code == 200
         mock_run.assert_called_once()
         _args, kwargs = mock_run.call_args
-        assert kwargs["skill_name"] == "nrm-coding-workflow"
+        assert kwargs["skill_name"] == "icfs-codegen-ut-sct"
         mock_ask.assert_called_once()
         sent = mock_ask.call_args[0][0]
-        assert "SkillFlow does not run SSH" in sent
+        assert "Markdown" in sent
         assert "Gerrit" in sent
         assert "gerrit_change_id" in sent
-        assert "linsee_ssh_host" in sent
+        assert "repo_layout_hint" in sent
 
 
 def test_analyze_stream_emits_single_sse_data_event(client):
@@ -551,223 +550,3 @@ def test_analyze_stream_accepts_use_case_id(client_example_uc_yaml):
     assert len(data_lines) == 1
     payload = json.loads(data_lines[0][6:])
     assert payload["chunk"] == "streamed via uc"
-
-
-def test_remote_nrm_workflow_status(client):
-    response = client.get("/api/remote/nrm-workflow/status")
-    assert response.status_code == 200
-    data = response.get_json()
-    assert "enabled" in data
-    assert "identity_configured" in data
-    assert "ssh_user_configured" in data
-    assert isinstance(data.get("allowed_actions"), list)
-    assert "phase2_patch_apply" in data
-    assert "phase3_suggest_patch" in data
-    assert "max_agent_iterations" in data
-
-
-def test_remote_nrm_workflow_forbidden_when_disabled(client, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.delenv("SKILLFLOW_REMOTE_SSH_ENABLED", raising=False)
-    response = client.post(
-        "/api/remote/nrm-workflow",
-        json={
-            "use_case_id": "icfs-to-code-ut-sct",
-            "linsee_ssh_host": "h.example.net",
-            "work_dir": "/w",
-            "repo_name": "r",
-            "remote_action": "dev_status",
-            "remote_run_confirmed": True,
-        },
-        content_type="application/json",
-    )
-    assert response.status_code == 403
-
-
-def test_remote_nrm_workflow_requires_confirmation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("SKILLFLOW_REMOTE_SSH_ENABLED", "1")
-    key = tmp_path / "id_rsa"
-    key.write_text("k", encoding="utf-8")
-    monkeypatch.setenv("SKILLFLOW_REMOTE_SSH_IDENTITY", str(key))
-    monkeypatch.setenv("SKILLFLOW_REMOTE_SSH_USER", "u")
-    cfg = tmp_path / "skillflow-test.yaml"
-    cfg.write_text("log_level: INFO\n", encoding="utf-8")
-    monkeypatch.setenv("SKILLFLOW_CONFIG", str(cfg))
-    monkeypatch.delenv("GITLAB_REPO_URL", raising=False)
-    app = create_app(skill_path=str(REPO_ROOT / "dev-skills"))
-    app.config["TESTING"] = True
-    with app.test_client() as c:
-        response = c.post(
-            "/api/remote/nrm-workflow",
-            json={
-                "use_case_id": "icfs-to-code-ut-sct",
-                "linsee_ssh_host": "h.example.net",
-                "work_dir": "/w",
-                "repo_name": "r",
-                "remote_action": "dev_status",
-                "remote_run_confirmed": False,
-            },
-            content_type="application/json",
-        )
-    assert response.status_code == 400
-
-
-@patch("src.remote_runner.subprocess.run")
-def test_remote_nrm_workflow_post_success(
-    mock_run,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    monkeypatch.setenv("SKILLFLOW_REMOTE_SSH_ENABLED", "1")
-    key = tmp_path / "id_rsa"
-    key.write_text("k", encoding="utf-8")
-    monkeypatch.setenv("SKILLFLOW_REMOTE_SSH_IDENTITY", str(key))
-    monkeypatch.setenv("SKILLFLOW_REMOTE_SSH_USER", "u")
-    monkeypatch.delenv("SKILLFLOW_REMOTE_SSH_HOST_ALLOWLIST", raising=False)
-    mock_run.return_value = subprocess.CompletedProcess(
-        args=[], returncode=0, stdout="REMOTE_OK\n", stderr=""
-    )
-    cfg = tmp_path / "skillflow-test.yaml"
-    cfg.write_text("log_level: INFO\n", encoding="utf-8")
-    monkeypatch.setenv("SKILLFLOW_CONFIG", str(cfg))
-    monkeypatch.delenv("GITLAB_REPO_URL", raising=False)
-    app = create_app(skill_path=str(REPO_ROOT / "dev-skills"))
-    app.config["TESTING"] = True
-    with app.test_client() as c:
-        response = c.post(
-            "/api/remote/nrm-workflow",
-            json={
-                "use_case_id": "icfs-to-code-ut-sct",
-                "linsee_ssh_host": "h.example.net",
-                "work_dir": "/w",
-                "repo_name": "r",
-                "remote_action": "dev_status",
-                "remote_run_confirmed": True,
-            },
-            content_type="application/json",
-        )
-    assert response.status_code == 200
-    data = response.get_json()
-    assert data.get("stdout") == "REMOTE_OK\n"
-    assert data.get("returncode") == 0
-
-
-def test_remote_validate_patch_ok(client):
-    diff = """--- a/src/x.cpp
-+++ b/src/x.cpp
-@@ -0,0 +1 @@
-+hi
-"""
-    response = client.post(
-        "/api/remote/nrm-workflow/validate-patch",
-        json={"use_case_id": "icfs-to-code-ut-sct", "unified_diff": diff},
-        content_type="application/json",
-    )
-    assert response.status_code == 200
-    data = response.get_json()
-    assert data.get("ok") is True
-    assert "src/x.cpp" in data.get("paths", [])
-
-
-@patch("src.app.remote_runner.apply_unified_diff_remote")
-def test_remote_apply_patch_delegates(mock_apply, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("SKILLFLOW_REMOTE_SSH_ENABLED", "1")
-    key = tmp_path / "id_rsa"
-    key.write_text("k", encoding="utf-8")
-    monkeypatch.setenv("SKILLFLOW_REMOTE_SSH_IDENTITY", str(key))
-    monkeypatch.setenv("SKILLFLOW_REMOTE_SSH_USER", "u")
-    cfg = tmp_path / "skillflow-test.yaml"
-    cfg.write_text("log_level: INFO\n", encoding="utf-8")
-    monkeypatch.setenv("SKILLFLOW_CONFIG", str(cfg))
-    monkeypatch.delenv("GITLAB_REPO_URL", raising=False)
-    mock_apply.return_value = (
-        {"returncode": 0, "stdout": "applied", "stderr": "", "paths_touched": ["src/x.cpp"]},
-        None,
-    )
-    app = create_app(skill_path=str(REPO_ROOT / "dev-skills"))
-    app.config["TESTING"] = True
-    diff = """--- a/src/x.cpp
-+++ b/src/x.cpp
-@@ -0,0 +1 @@
-+hi
-"""
-    with app.test_client() as c:
-        response = c.post(
-            "/api/remote/nrm-workflow/apply-patch",
-            json={
-                "use_case_id": "icfs-to-code-ut-sct",
-                "linsee_ssh_host": "h.example.net",
-                "work_dir": "/w",
-                "unified_diff": diff,
-                "patch_apply_confirmed": True,
-            },
-            content_type="application/json",
-        )
-    assert response.status_code == 200
-    assert mock_apply.called
-
-
-@patch("src.app.CopilotExecutor.ask_ai")
-def test_remote_suggest_patch_parses_fence(mock_ask, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("SKILLFLOW_REMOTE_SUGGEST_PATCH_ENABLED", "1")
-    cfg = tmp_path / "skillflow-test.yaml"
-    cfg.write_text("log_level: INFO\n", encoding="utf-8")
-    monkeypatch.setenv("SKILLFLOW_CONFIG", str(cfg))
-    monkeypatch.delenv("GITLAB_REPO_URL", raising=False)
-    skill_dir = tmp_path / "nrm-coding-workflow"
-    skill_dir.mkdir()
-    (skill_dir / "SKILL.md").write_text(
-        "---\nname: nrm-coding-workflow\ndescription: x\n---\n\n# N\n",
-        encoding="utf-8",
-    )
-    mock_ask.return_value = """```diff
---- a/src/a.cpp
-+++ b/src/a.cpp
-@@ -1 +1 @@
--x
-+y
-```
-"""
-    app = create_app(skill_path=str(tmp_path))
-    app.config["TESTING"] = True
-    with app.test_client() as c:
-        response = c.post(
-            "/api/remote/nrm-workflow/suggest-patch",
-            json={
-                "use_case_id": "icfs-to-code-ut-sct",
-                "user_input": "fix bug",
-                "iteration_index": 0,
-            },
-            content_type="application/json",
-        )
-    assert response.status_code == 200
-    data = response.get_json()
-    assert data.get("proposed_diff")
-    assert "src/a.cpp" in (data.get("paths") or [])
-
-
-def test_remote_suggest_patch_iteration_out_of_range(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("SKILLFLOW_REMOTE_SUGGEST_PATCH_ENABLED", "1")
-    monkeypatch.setenv("SKILLFLOW_REMOTE_AGENT_MAX_ITERATIONS", "3")
-    cfg = tmp_path / "skillflow-test.yaml"
-    cfg.write_text("log_level: INFO\n", encoding="utf-8")
-    monkeypatch.setenv("SKILLFLOW_CONFIG", str(cfg))
-    monkeypatch.delenv("GITLAB_REPO_URL", raising=False)
-    skill_dir = tmp_path / "nrm-coding-workflow"
-    skill_dir.mkdir()
-    (skill_dir / "SKILL.md").write_text(
-        "---\nname: nrm-coding-workflow\ndescription: x\n---\n\n# N\n",
-        encoding="utf-8",
-    )
-    app = create_app(skill_path=str(tmp_path))
-    app.config["TESTING"] = True
-    with app.test_client() as c:
-        response = c.post(
-            "/api/remote/nrm-workflow/suggest-patch",
-            json={
-                "use_case_id": "icfs-to-code-ut-sct",
-                "user_input": "x",
-                "iteration_index": 3,
-            },
-            content_type="application/json",
-        )
-    assert response.status_code == 400

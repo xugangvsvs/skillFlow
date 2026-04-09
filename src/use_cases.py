@@ -37,32 +37,24 @@ FIXED_USE_CASE_DEFINITIONS: List[Dict[str, Any]] = [
             "Generate implementation code, unit tests (UT), and system/scenario test (SCT) "
             "artifacts from an ICFS."
         ),
-        "skill_name": "nrm-coding-workflow",
+        "skill_name": "icfs-codegen-ut-sct",
         "prompt_prefix": (
-            "Context for nrm-coding-workflow: SkillFlow does not run SSH or nrm on the server. "
-            "Assume the user will SSH to the LinSee host they provide, then run all nrm/scripts "
-            "only under the given work_dir and repo_name on that remote machine — not on the "
-            "SkillFlow host.\n"
-            "ICFS/PFS is expected via Gerrit (change ID below); SkillFlow does not fetch Gerrit — "
-            "the user reads the patch diff on LinSee per the skill.\n"
-            "Optional: when the server enables SKILLFLOW_REMOTE_SSH_ENABLED, the Web UI can run "
-            "whitelisted dev-status/build/UT scripts on LinSee via SSH (Phase 1); this is off by default.\n"
-            "上下文：SkillFlow 服务端不会代 SSH 或执行 nrm。请假定用户会登录其提供的 LinSee 主机，"
-            "且仅在所给 work_dir / repo_name 对应的远程仓库环境中执行 nrm 与 skill 中的脚本。\n"
-            "规格说明通过 Gerrit change ID 提供；本平台不拉取 Gerrit，需在 LinSee 上按 skill 阅读 patch。"
+            "Context: SkillFlow only generates Markdown (implementation drafts, UT design, SCT "
+            "design) from the skill and your input. It does not compile code, run tests, SSH, or "
+            "execute nrm. Paste ICFS/spec excerpts, interface snippets, or repo paths in the main "
+            "input; use optional fields below for traceability (e.g. Gerrit change ID as a label "
+            "only — the server does not fetch Gerrit). You apply the output in your own checkout."
         ),
         "inputs": [
             {
                 "name": "gerrit_change_id",
                 "type": "text",
-                "label": "Gerrit ICFS/PFS change ID",
-                "placeholder": "e.g. 12345 / change number (read patch diff on LinSee)",
+                "label": "Gerrit ICFS/PFS change ID (optional)",
+                "placeholder": "e.g. 12345 — traceability in the prompt; SkillFlow does not fetch Gerrit",
                 "description": (
-                    "Read specification (if from Gerrit). If the user provides a Gerrit ICFS/PFS "
-                    "change ID, read the patch diff → extract interface definitions, method "
-                    "signatures, expected behavior, error handling rules. "
-                    "SkillFlow does not connect to Gerrit; use this ID in your prompt and follow "
-                    "the skill on the LinSee host."
+                    "Optional reference for requirements traceability. SkillFlow does not connect "
+                    "to Gerrit; include relevant spec text in the main input if the model should "
+                    "see it."
                 ),
             },
             {
@@ -72,22 +64,13 @@ FIXED_USE_CASE_DEFINITIONS: List[Dict[str, Any]] = [
                 "placeholder": "e.g. Python 3.11 / C++17 / Java 17",
             },
             {
-                "name": "linsee_ssh_host",
+                "name": "repo_layout_hint",
                 "type": "text",
-                "label": "LinSee SSH host (where nrm runs)",
-                "placeholder": "e.g. hzlinc01-boam.linsee.dyn.nesc.nokia.net",
-            },
-            {
-                "name": "work_dir",
-                "type": "text",
-                "label": "Remote work directory (absolute path on LinSee)",
-                "placeholder": "e.g. /path/to/your/checkout",
-            },
-            {
-                "name": "repo_name",
-                "type": "text",
-                "label": "Repository name (nrm repo name)",
-                "placeholder": "e.g. netconf / gnmi (as used with nrm)",
+                "label": "Optional repository context",
+                "placeholder": "e.g. src/, test/ut/, module names",
+                "description": (
+                    "Optional hints for file placement (paths, modules). No remote execution."
+                ),
             },
         ],
     },
