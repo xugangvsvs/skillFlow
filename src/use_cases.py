@@ -42,20 +42,29 @@ FIXED_USE_CASE_DEFINITIONS: List[Dict[str, Any]] = [
         "prompt_prefix": (
             "Context: SkillFlow only generates Markdown (implementation drafts, UT design, SCT "
             "design) from the skill and your input. It does not compile code, run tests, SSH, or "
-            "execute nrm. Paste ICFS/spec excerpts, interface snippets, or repo paths in the main "
-            "input; use optional fields below for traceability (e.g. Gerrit change ID as a label "
-            "only — the server does not fetch Gerrit). You apply the output in your own checkout."
+            "execute nrm. When the server sets GERRIT_FETCH_ENABLED=1 and HTTP credentials, it may "
+            "attach a Gerrit patch from a pasted URL; otherwise paste spec text in the main input. "
+            "Use repo_layout_hint for code paths. You apply the output in your own checkout."
         ),
         "inputs": [
             {
+                "name": "gerrit_url",
+                "type": "text",
+                "label": "Gerrit change URL (optional)",
+                "placeholder": "e.g. https://gerrit.example.com/gerrit/c/PROJECT/+/12345",
+                "description": (
+                    "If GERRIT_FETCH_ENABLED=1 and credentials are configured, the server fetches "
+                    "the current revision patch and injects it into the prompt. Otherwise ignored."
+                ),
+            },
+            {
                 "name": "gerrit_change_id",
                 "type": "text",
-                "label": "Gerrit ICFS/PFS change ID (optional)",
-                "placeholder": "e.g. 12345 — traceability in the prompt; SkillFlow does not fetch Gerrit",
+                "label": "Gerrit change number (optional)",
+                "placeholder": "e.g. 9818348 — or paste full URL in Gerrit URL; needs GERRIT_BASE_URL if numeric only",
                 "description": (
-                    "Optional reference for requirements traceability. SkillFlow does not connect "
-                    "to Gerrit; include relevant spec text in the main input if the model should "
-                    "see it."
+                    "Traceability in the prompt. If fetch is enabled, a numeric ID also triggers fetch "
+                    "when GERRIT_BASE_URL (and optionally GERRIT_DEFAULT_PROJECT) is set."
                 ),
             },
             {

@@ -5,10 +5,14 @@ description: >-
   design, and system/scenario test (SCT) design as Markdown. No build or remote execution —
   SkillFlow only generates text for the user to apply in their environment.
 inputs:
+  - name: gerrit_url
+    type: text
+    label: Gerrit change URL (optional)
+    placeholder: paste browser URL when server has Gerrit fetch enabled
   - name: gerrit_change_id
     type: text
     label: Gerrit ICFS/PFS change ID (optional)
-    placeholder: e.g. 12345 — for traceability in the prompt only
+    placeholder: e.g. 12345 — or use with GERRIT_BASE_URL for fetch
   - name: language_stack
     type: text
     label: Language or framework (optional)
@@ -37,7 +41,8 @@ SkillFlow **does not** run compilers, `nrm`, SSH, or shell scripts. **Do not** i
 
 ## Phase A — Understand (from prompt only)
 
-- Use **user input**, optional **Gerrit change ID** (as a label for requirements; SkillFlow does not fetch Gerrit), and optional **repository context** to infer:
+- If the prompt contains a section **### Fetched from Gerrit** with a diff/patch, treat that as the primary specification delta for code and tests (plus any user notes above it).
+- Use **user input**, optional **Gerrit URL / change ID**, and optional **repository context** (`repo_layout_hint`) to infer:
   - Relevant directories (`src/`, `include/`, `test/ut/`, CMake layout hints).
   - Interface definitions, method signatures, error handling, sequencing.
 - If information is missing, state assumptions explicitly and use `TODO` with the dependency.

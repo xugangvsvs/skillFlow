@@ -118,6 +118,13 @@ You can store non-secret defaults in YAML instead of exporting many environment 
 | `GITLAB_SKILLS_CACHE` | *(empty)* | Same as YAML `gitlab_skills_cache` when using GitLab. |
 | `SKILLS_PATH` | *(see below)* | Same as YAML `skills_path`: if set, that directory is used and GitLab sync is skipped. |
 | `SKILLFLOW_LOG_LEVEL` | `INFO` | Same as YAML `log_level` for `skillflow.*` loggers. |
+| `GERRIT_FETCH_ENABLED` | *(off)* | Set `1` / `true` so the **ICFS→code/UT/SCT** use case can fetch a Gerrit patch from **Gerrit URL** (or numeric `gerrit_change_id` with `GERRIT_BASE_URL`). Requires `GERRIT_HTTP_*` and host allowlist. |
+| `GERRIT_HTTP_USER` | *(empty)* | Gerrit HTTP digest username. |
+| `GERRIT_HTTP_PASSWORD` | *(empty)* | Gerrit HTTP password (from Gerrit user settings, not SSO cookie). |
+| `GERRIT_HOST_ALLOWLIST` | `gerrit.ext.net.nokia.com` | Comma-separated hosts permitted for fetch (SSRF guard). |
+| `GERRIT_BASE_URL` | *(empty)* | e.g. `https://gerrit.ext.net.nokia.com` when using a **numeric-only** change id in `gerrit_change_id`. |
+| `GERRIT_DEFAULT_PROJECT` | *(empty)* | Optional `project` segment (e.g. `MN/OAM/DOCS/boam`) for numeric-only queries. |
+| `GERRIT_PATCH_MAX_BYTES` | `393216` | Max patch size injected into the LLM prompt (floor `4096`). |
 
 ### Use cases (business scenarios)
 
@@ -128,6 +135,8 @@ The default catalog has four scenarios: **EFS→PFS**, **PFS→ICFS**, **ICFS→
 1. **Web UI:** open the **Use Cases** tab, pick a scenario, fill dynamic inputs (from the skill metadata), then **Analyze**.
 2. **API:** `GET /api/use-cases` returns `{ id, title, description, inputs, available }`. Submit analysis with JSON or multipart field **`use_case_id`** (and **`user_input`**). Do not send **`skill_name`** in the same request as **`use_case_id`**.
 3. Optional **`prompt_prefix`** on a definition (in code) is prepended to `user_input` on the server only.
+
+**ICFS→code/UT/SCT and Gerrit:** paste the full browser **Gerrit URL** into **Gerrit change URL** (or a numeric change id plus `GERRIT_BASE_URL`). Put workspace paths in **Optional repository context**. When `GERRIT_FETCH_ENABLED=1` and credentials are set, the server attaches the current revision patch under `### Fetched from Gerrit` in the prompt; otherwise paste spec text in the main input. The JSON response may include **`gerrit_warning`** if fetch failed.
 
 ### Load skills from GitLab
 

@@ -464,6 +464,7 @@ def test_icfs_use_case_maps_to_icfs_to_code_ut_sct(
         icfs = next(x for x in uc_list if x.get("id") == "icfs-to-code-ut-sct")
         assert icfs.get("available") is True
         input_names = {i.get("name") for i in (icfs.get("inputs") or [])}
+        assert "gerrit_url" in input_names
         assert "gerrit_change_id" in input_names
         assert "language_stack" in input_names
         assert "repo_layout_hint" in input_names
@@ -503,6 +504,46 @@ def test_icfs_use_case_maps_to_icfs_to_code_ut_sct(
         assert "Gerrit" in sent
         assert "gerrit_change_id" in sent
         assert "repo_layout_hint" in sent
+
+
+def test_analyze_icfs_includes_gerrit_patch_when_fetch_enabled(
+    client_example_uc_yaml, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GERRIT_FETCH_ENABLED", "1")
+    monkeypatch.setenv("GERRIT_HTTP_USER", "u")
+    monkeypatch.setenv("GERRIT_HTTP_PASSWORD", "p")
+    monkeypatch.setenv("GERRIT_HOST_ALLOWLIST", "gerrit.ext.net.nokia.com")
+    with patch(
+        "src.gerrit_fetch.fetch_change_patch_text",
+        return_value=("diff --git a/x b/x\n", None),
+    ) as mock_fetch, patch(
+        "src.app.CopilotExecutor.ask_ai",
+        return_value="ok",
+    ) as mock_ask, patch(
+        "src.app.SkillRunner.run_tool_if_configured",
+        return_value={
+            "mode": "fallback",
+            "reason": "no_adapter",
+            "tool_output": "",
+            "note": "No adapter configured",
+        },
+    ):
+        response = client_example_uc_yaml.post(
+            "/api/analyze",
+            json={
+                "use_case_id": "icfs-to-code-ut-sct",
+                "user_input": "extra",
+                "input_params": {
+                    "gerrit_url": "https://gerrit.ext.net.nokia.com/gerrit/c/MN/A/+/1",
+                },
+            },
+            content_type="application/json",
+        )
+    assert response.status_code == 200
+    mock_fetch.assert_called_once()
+    sent = mock_ask.call_args[0][0]
+    assert "Fetched from Gerrit" in sent
+    assert "diff --git" in sent
 
 
 def test_analyze_stream_emits_single_sse_data_event(client):

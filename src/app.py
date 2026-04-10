@@ -20,6 +20,7 @@ import os
 
 from src.logging_context import CorrelationIdFilter, correlation_id_var, get_or_create_correlation_id
 from src.skillflow_config import load_skillflow_config, pick_str
+from src.gerrit_fetch import icfs_may_omit_user_text, maybe_append_gerrit_patch_to_user_input
 from src.skill_paths import resolve_skill_repo_dir, supplement_dev_skills_dirs
 from src.use_cases import apply_use_case, prepare_use_cases
 
@@ -358,8 +359,15 @@ def create_app(
         if request_error:
             return jsonify({"error": request_error}), 400
 
-        if not user_input:
-            return jsonify({"error": "Missing required field: user_input"}), 400
+        if not (user_input or "").strip():
+            if icfs_may_omit_user_text(use_case_id, input_params):
+                user_input = (
+                    "(No additional free-text instructions; Gerrit patch will be attached below.)"
+                )
+            else:
+                return jsonify({"error": "Missing required field: user_input"}), 400
+        else:
+            user_input = (user_input or "").strip()
 
         skill_name, user_input, err_resp = resolve_analyze_target(
             use_case_id, skill_name, user_input
@@ -367,6 +375,10 @@ def create_app(
         if err_resp:
             body, status = err_resp
             return body, status
+
+        user_input, gerrit_warning = maybe_append_gerrit_patch_to_user_input(
+            (use_case_id or "").strip(), user_input, input_params
+        )
 
         # Find the skill
         skill = find_skill_by_name(skill_name)
@@ -398,13 +410,14 @@ def create_app(
         # Call LLM executor
         result = executor.ask_ai(prompt)
 
-        return jsonify(
-            {
-                "result": result,
-                "mode": tool_run["mode"],
-                "execution_note": tool_run["note"],
-            }
-        ), 200
+        payload: Dict[str, Any] = {
+            "result": result,
+            "mode": tool_run["mode"],
+            "execution_note": tool_run["note"],
+        }
+        if gerrit_warning:
+            payload["gerrit_warning"] = gerrit_warning
+        return jsonify(payload), 200
     
     @app.route("/api/analyze/stream", methods=["POST"])
     def analyze_stream():
@@ -433,8 +446,15 @@ def create_app(
         if request_error:
             return jsonify({"error": request_error}), 400
 
-        if not user_input:
-            return jsonify({"error": "Missing required field: user_input"}), 400
+        if not (user_input or "").strip():
+            if icfs_may_omit_user_text(use_case_id, input_params):
+                user_input = (
+                    "(No additional free-text instructions; Gerrit patch will be attached below.)"
+                )
+            else:
+                return jsonify({"error": "Missing required field: user_input"}), 400
+        else:
+            user_input = (user_input or "").strip()
 
         skill_name, user_input, err_resp = resolve_analyze_target(
             use_case_id, skill_name, user_input
@@ -442,6 +462,10 @@ def create_app(
         if err_resp:
             body, status = err_resp
             return body, status
+
+        user_input, gerrit_warning = maybe_append_gerrit_patch_to_user_input(
+            (use_case_id or "").strip(), user_input, input_params
+        )
 
         skill = find_skill_by_name(skill_name)
         if not skill:
@@ -466,7 +490,10 @@ def create_app(
         
         def generate():
             """Generator function for SSE."""
-            yield f"data: {json.dumps({'chunk': result})}\n\n"
+            payload: Dict[str, Any] = {"chunk": result}
+            if gerrit_warning:
+                payload["gerrit_warning"] = gerrit_warning
+            yield f"data: {json.dumps(payload)}\n\n"
         
         return Response(generate(), mimetype="text/event-stream"), 200
     
