@@ -26,7 +26,7 @@ def test_correlation_id_from_alternate_header(client):
 
 
 def test_analyze_logs_contain_correlation_id(client, caplog):
-    with patch("src.app.CopilotExecutor.ask_ai", return_value="ok"), patch(
+    with patch("src.executor.CopilotExecutor.ask_ai", return_value="ok"), patch(
         "src.app.SkillRunner.run_tool_if_configured",
         return_value={
             "mode": "fallback",

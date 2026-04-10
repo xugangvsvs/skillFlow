@@ -79,8 +79,9 @@ def test_get_skills_exposes_inputs_metadata_from_front_matter(
 
 def test_analyze_with_valid_skill(client):
     """Test POST /api/analyze with a valid skill and user input."""
-    with patch("src.app.CopilotExecutor") as mock_executor_class, patch("src.app.SkillRunner.run_tool_if_configured") as mock_run:
-        mock_executor_class.return_value.ask_ai.return_value = "Mocked AI analysis result."
+    with patch("src.executor.CopilotExecutor.ask_ai", return_value="Mocked AI analysis result."), patch(
+        "src.app.SkillRunner.run_tool_if_configured"
+    ) as mock_run:
         mock_run.return_value = {
             "mode": "fallback",
             "tool_output": "",
@@ -157,7 +158,7 @@ def test_web_home_page_contains_search_and_file_upload(client):
 
 def test_analyze_accepts_multipart_with_uploaded_file(client):
     """Test POST /api/analyze accepts multipart form data with a log file."""
-    with patch("src.app.CopilotExecutor.ask_ai", return_value="Mocked multipart analysis") as mock_ask_ai, \
+    with patch("src.executor.CopilotExecutor.ask_ai", return_value="Mocked multipart analysis") as mock_ask_ai, \
          patch("src.app.SkillRunner.run_tool_if_configured", return_value={
              "mode": "fallback",
              "tool_output": "",
@@ -182,7 +183,7 @@ def test_analyze_accepts_multipart_with_uploaded_file(client):
 
 def test_analyze_uses_tool_output_when_tool_first_mode(client):
     """Test analyze endpoint uses tool output when adapter runner returns tool-first mode."""
-    with patch("src.app.CopilotExecutor.ask_ai", return_value="Tool-first summary") as mock_ask_ai, \
+    with patch("src.executor.CopilotExecutor.ask_ai", return_value="Tool-first summary") as mock_ask_ai, \
          patch("src.app.SkillRunner.run_tool_if_configured", return_value={
              "mode": "tool-first",
              "tool_output": "parsed object count: 42",
@@ -227,7 +228,7 @@ def test_analyze_rejects_empty_uploaded_file(client):
 def test_analyze_tool_error_excludes_binary_content_and_warns_llm(client):
     """When tool-first fails (tool_error reason), binary file content must NOT be included
     in the LLM prompt, and the prompt must explicitly warn against fabricating data."""
-    with patch("src.app.CopilotExecutor.ask_ai", return_value="Error explanation") as mock_ask_ai, \
+    with patch("src.executor.CopilotExecutor.ask_ai", return_value="Error explanation") as mock_ask_ai, \
          patch("src.app.SkillRunner.run_tool_if_configured", return_value={
              "mode": "fallback",
              "reason": "tool_error",
@@ -258,7 +259,7 @@ def test_analyze_tool_error_excludes_binary_content_and_warns_llm(client):
 def test_analyze_truncates_huge_uploaded_log_in_fallback_prompt(client):
     """Huge uploaded logs should be truncated in fallback prompt path to avoid oversized LLM payloads."""
     huge_text = ("X" * 350000).encode("utf-8")
-    with patch("src.app.CopilotExecutor.ask_ai", return_value="Mocked huge-log analysis") as mock_ask_ai, \
+    with patch("src.executor.CopilotExecutor.ask_ai", return_value="Mocked huge-log analysis") as mock_ask_ai, \
          patch("src.app.SkillRunner.run_tool_if_configured", return_value={
              "mode": "fallback",
              "tool_output": "",
@@ -281,7 +282,7 @@ def test_analyze_truncates_huge_uploaded_log_in_fallback_prompt(client):
 
 
 def test_analyze_includes_dynamic_input_params_in_prompt(client):
-    with patch("src.app.CopilotExecutor.ask_ai", return_value="ok") as mock_ask_ai, \
+    with patch("src.executor.CopilotExecutor.ask_ai", return_value="ok") as mock_ask_ai, \
          patch("src.app.SkillRunner.run_tool_if_configured", return_value={
              "mode": "fallback",
              "reason": "no_adapter",
@@ -312,7 +313,7 @@ def test_analyze_includes_dynamic_input_params_in_prompt(client):
 
 def test_analyze_passes_input_params_to_skill_runner(client):
     """Tool-first path must receive form/json input_params for adapter arg templates."""
-    with patch("src.app.CopilotExecutor.ask_ai", return_value="ok"), patch(
+    with patch("src.executor.CopilotExecutor.ask_ai", return_value="ok"), patch(
         "src.app.SkillRunner.run_tool_if_configured",
         return_value={
             "mode": "fallback",
@@ -353,7 +354,7 @@ def test_get_use_cases(client_example_uc_yaml):
 
 
 def test_analyze_with_use_case_id(client_example_uc_yaml):
-    with patch("src.app.CopilotExecutor.ask_ai", return_value="ok") as mock_ask, patch(
+    with patch("src.executor.CopilotExecutor.ask_ai", return_value="ok") as mock_ask, patch(
         "src.app.SkillRunner.run_tool_if_configured",
         return_value={
             "mode": "fallback",
@@ -418,7 +419,7 @@ def test_analyze_use_case_prompt_prefix_in_prompt(tmp_path: Path, monkeypatch: p
     )
     app.config["TESTING"] = True
     with app.test_client() as client, patch(
-        "src.app.CopilotExecutor.ask_ai", return_value="ok"
+        "src.executor.CopilotExecutor.ask_ai", return_value="ok"
     ) as mock_ask, patch(
         "src.app.SkillRunner.run_tool_if_configured",
         return_value={
@@ -473,7 +474,7 @@ def test_icfs_use_case_maps_to_icfs_to_code_ut_sct(
         assert "work_dir" not in input_names
         assert "repo_name" not in input_names
 
-        with patch("src.app.CopilotExecutor.ask_ai", return_value="ok") as mock_ask, patch(
+        with patch("src.executor.CopilotExecutor.ask_ai", return_value="ok") as mock_ask, patch(
             "src.app.SkillRunner.run_tool_if_configured",
             return_value={
                 "mode": "fallback",
@@ -517,7 +518,7 @@ def test_analyze_icfs_includes_gerrit_patch_when_fetch_enabled(
         "src.gerrit_fetch.fetch_change_patch_text",
         return_value=("diff --git a/x b/x\n", None),
     ) as mock_fetch, patch(
-        "src.app.CopilotExecutor.ask_ai",
+        "src.executor.CopilotExecutor.ask_ai",
         return_value="ok",
     ) as mock_ask, patch(
         "src.app.SkillRunner.run_tool_if_configured",
@@ -546,9 +547,9 @@ def test_analyze_icfs_includes_gerrit_patch_when_fetch_enabled(
     assert "diff --git" in sent
 
 
-def test_analyze_stream_emits_single_sse_data_event(client):
-    """Contract: one SSE data line with full LLM text (not token streaming)."""
-    with patch("src.app.CopilotExecutor.ask_ai", return_value="complete answer"), patch(
+def test_analyze_stream_emits_status_then_complete_sse(client):
+    """Contract: SSE status events during pipeline, then complete (not token streaming)."""
+    with patch("src.executor.CopilotExecutor.ask_ai", return_value="complete answer"), patch(
         "src.app.SkillRunner.run_tool_if_configured",
         return_value={
             "mode": "fallback",
@@ -562,16 +563,21 @@ def test_analyze_stream_emits_single_sse_data_event(client):
             json={"skill_name": "analyze-ims2", "user_input": "q"},
             content_type="application/json",
         )
-    assert response.status_code == 200
-    text = response.get_data(as_text=True)
+        assert response.status_code == 200
+        # Stream body may be consumed only on get_data(); keep mocks active until then.
+        text = response.get_data(as_text=True)
     data_lines = [ln for ln in text.split("\n") if ln.startswith("data: ")]
-    assert len(data_lines) == 1
-    payload = json.loads(data_lines[0][6:])
-    assert payload["chunk"] == "complete answer"
+    assert len(data_lines) >= 2
+    events = [json.loads(ln[6:]) for ln in data_lines]
+    assert any(e.get("type") == "status" for e in events)
+    complete = [e for e in events if e.get("type") == "complete"]
+    assert len(complete) == 1
+    assert complete[0]["result"] == "complete answer"
+    assert complete[0]["mode"] == "fallback"
 
 
 def test_analyze_stream_accepts_use_case_id(client_example_uc_yaml):
-    with patch("src.app.CopilotExecutor.ask_ai", return_value="streamed via uc"), patch(
+    with patch("src.executor.CopilotExecutor.ask_ai", return_value="streamed via uc"), patch(
         "src.app.SkillRunner.run_tool_if_configured",
         return_value={
             "mode": "fallback",
@@ -585,9 +591,11 @@ def test_analyze_stream_accepts_use_case_id(client_example_uc_yaml):
             json={"use_case_id": "efs-to-pfs", "user_input": "q"},
             content_type="application/json",
         )
-    assert response.status_code == 200
-    text = response.get_data(as_text=True)
+        assert response.status_code == 200
+        text = response.get_data(as_text=True)
     data_lines = [ln for ln in text.split("\n") if ln.startswith("data: ")]
-    assert len(data_lines) == 1
-    payload = json.loads(data_lines[0][6:])
-    assert payload["chunk"] == "streamed via uc"
+    assert len(data_lines) >= 2
+    events = [json.loads(ln[6:]) for ln in data_lines]
+    complete = [e for e in events if e.get("type") == "complete"]
+    assert len(complete) == 1
+    assert complete[0]["result"] == "streamed via uc"

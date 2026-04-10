@@ -18,9 +18,23 @@ gitlab_branch: main
 # Clone/pull cache when gitlab_repo_url is set (default: var/gitlab-skills under project root).
 # gitlab_skills_cache: ""
 
-# --- LLM (optional; defaults match intranet Nokia endpoint) ---
+# --- LLM (optional; defaults match intranet Nokia endpoint in code if unset) ---
 # llm_api_url: "http://hzllmapi.dyn.nesc.nokia.net:8080/v1/chat/completions"
 # llm_model: "qwen/qwen3-32b"
+#
+# Alibaba Model Studio (DashScope) OpenAI-compatible mode — set API key via env only (LLM_API_KEY or DASHSCOPE_API_KEY), not in this file:
+#   LLM_API_URL=https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
+#   LLM_MODEL=qwen3.6-plus
+# Beijing: https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
+# Singapore: https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions
+# Docs: https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope
+# Corporate network: set HTTPS_PROXY / HTTP_PROXY in the environment (not in this file).
+# Long LLM runs: LLM_HTTP_READ_TIMEOUT_SECONDS (default 180 in code) if large prompts time out.
+# Intranet LLM (nokia.net, etc.) bypasses proxy automatically; use LLM_BYPASS_PROXY=1 to force no proxy for any URL.
+#
+# Optional: use Cursor terminal agent instead of HTTP (env only — not read from YAML):
+#   SKILLFLOW_LLM_BACKEND=cursor_cli
+# See README: headless adds --model composer-2 by default (override CURSOR_CLI_MODEL). Not LLM_MODEL. PATH: `agent` before `cursor`.
 
 # --- Logging ---
 # log_level: INFO

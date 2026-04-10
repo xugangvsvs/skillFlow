@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.executor import CopilotExecutor
+from src.llm_factory import create_llm_executor
 from src.scanner import SkillScanner, match_skill
 from src.skillflow_config import load_skillflow_config, pick_str
 from src.skill_paths import resolve_skill_repo_dir, supplement_dev_skills_dirs
@@ -25,7 +25,11 @@ def run_app():
         gitlab_branch=gitlab_branch,
         supplement_repo_paths=supplement_paths,
     )
-    executor = CopilotExecutor(api_url=llm_url, model=llm_model)
+    executor = create_llm_executor(
+        project_root=project_root,
+        llm_api_url=llm_url,
+        llm_model=llm_model,
+    )
 
     print("\n" + "="*50)
     print("   Nokia AI SkillFlow: 40+ Skills Loaded   ")

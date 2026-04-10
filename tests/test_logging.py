@@ -72,7 +72,7 @@ class TestAppRequestLogging:
         app.config["TESTING"] = True
         with app.test_client() as client:
             with caplog.at_level(logging.INFO, logger="skillflow.app"):
-                with patch("src.app.CopilotExecutor.ask_ai", return_value="ok"), \
+                with patch("src.executor.CopilotExecutor.ask_ai", return_value="ok"), \
                      patch("src.app.SkillRunner.run_tool_if_configured", return_value={
                          "mode": "fallback", "reason": "no_adapter",
                          "tool_output": "", "note": "no adapter",

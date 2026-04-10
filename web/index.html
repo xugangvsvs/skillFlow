@@ -586,6 +586,53 @@
         }
       }
 
+      /**
+       * Reads POST /api/analyze/stream (SSE): status lines then one complete payload.
+       * @returns {Promise<object|null>} complete event body (result, mode, …) or null
+       */
+      async function readAnalyzeSse(response) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let completePayload = null;
+        let streamError = null;
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) {
+            break;
+          }
+          buffer += decoder.decode(chunk.value, { stream: true });
+          const frames = buffer.split("\n\n");
+          buffer = frames.pop() || "";
+          for (let fi = 0; fi < frames.length; fi++) {
+            const lines = frames[fi].split("\n");
+            for (let li = 0; li < lines.length; li++) {
+              const line = lines[li];
+              if (line.indexOf("data: ") !== 0) {
+                continue;
+              }
+              let obj;
+              try {
+                obj = JSON.parse(line.slice(6));
+              } catch (e) {
+                continue;
+              }
+              if (obj.type === "status" && obj.message) {
+                appendTerminal("[System] " + obj.message);
+              } else if (obj.type === "complete") {
+                completePayload = obj;
+              } else if (obj.type === "error") {
+                streamError = obj.error || "Stream error";
+              }
+            }
+          }
+        }
+        if (streamError) {
+          throw new Error(streamError);
+        }
+        return completePayload;
+      }
+
       async function analyze() {
         const userInput = analysisInputEl.value.trim();
         if (browseMode === "usecases") {
@@ -608,6 +655,9 @@
         } else {
           appendTerminal("[System] Submitting request for skill: " + selectedSkillName);
         }
+        appendTerminal(
+          "[System] Streaming server progress below; the model step can still take several minutes."
+        );
 
         const selectedFile = logFileEl.files && logFileEl.files.length ? logFileEl.files[0] : null;
         const collected = collectDynamicInputParams();
@@ -632,23 +682,50 @@
             formData.append("log_file", effectiveFile);
           }
 
-          const response = await fetch("/api/analyze", {
+          /* Let the terminal repaint before the long blocking request. */
+          await new Promise(function (resolve) {
+            setTimeout(resolve, 0);
+          });
+
+          const response = await fetch("/api/analyze/stream", {
             method: "POST",
             body: formData
           });
 
-          const data = await response.json();
           if (!response.ok) {
-            appendTerminal(data.error || "Request failed", true);
-          } else {
-            if (data.mode) {
-              appendTerminal("[System] Execution mode: " + data.mode);
+            let errText = "Request failed";
+            try {
+              const errJson = await response.json();
+              if (errJson && errJson.error) {
+                errText = errJson.error;
+              }
+            } catch (e) {
+              /* ignore */
             }
-            if (data.execution_note) {
-              appendTerminal("[System] " + data.execution_note);
-            }
-            appendTerminal("[AI] " + (data.result || "(empty response)"));
+            appendTerminal(errText, true);
+            return;
           }
+
+          if (!response.body || typeof response.body.getReader !== "function") {
+            appendTerminal("Streaming is not supported in this browser.", true);
+            return;
+          }
+
+          const data = await readAnalyzeSse(response);
+          if (!data) {
+            appendTerminal("No result from server (empty stream).", true);
+            return;
+          }
+          if (data.mode) {
+            appendTerminal("[System] Execution mode: " + data.mode);
+          }
+          if (data.execution_note) {
+            appendTerminal("[System] " + data.execution_note);
+          }
+          if (data.gerrit_warning) {
+            appendTerminal("[System] " + data.gerrit_warning);
+          }
+          appendTerminal("[AI] " + (data.result || "(empty response)"));
         } catch (error) {
           appendTerminal("Network error: " + error.message, true);
         } finally {

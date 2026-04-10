@@ -109,8 +109,28 @@ You can store non-secret defaults in YAML instead of exporting many environment 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `SKILLFLOW_CONFIG` | *(empty)* | Optional path to a YAML file instead of `config/skillflow.yaml`. |
-| `LLM_API_URL` | `http://hzllmapi.dyn.nesc.nokia.net:8080/v1/chat/completions` | Nokia internal LLM endpoint (overrides `llm_api_url` in YAML). |
-| `LLM_MODEL` | `qwen/qwen3-32b` | LLM model name (overrides `llm_model` in YAML). |
+| `LLM_API_URL` | `http://hzllmapi.dyn.nesc.nokia.net:8080/v1/chat/completions` | LLM endpoint (overrides `llm_api_url` in YAML). |
+| `LLM_MODEL` | `qwen/qwen3-32b` | Model id for the **HTTP** OpenAI-compatible backend only (e.g. DashScope). Not passed to Cursor CLI. |
+| `LLM_API_KEY` | *(empty)* | Optional `Authorization: Bearer` token for OpenAI-compatible APIs. Checked before `DASHSCOPE_API_KEY`. **Env only — never commit.** |
+| `DASHSCOPE_API_KEY` | *(empty)* | Same as `LLM_API_KEY` for [Alibaba Model Studio (DashScope) OpenAI-compatible](https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope) mode. |
+| `LLM_BYPASS_PROXY` | *(off)* | If `1` / `true` / `yes`, force **no** HTTP(S) proxy for LLM calls (empty `proxies`). Intranet URLs (`nokia.net`, `hzllmapi`, `localhost`, …) bypass automatically. |
+| `HTTPS_PROXY` / `HTTP_PROXY` | *(OS/env)* | Standard variables used by `requests` for **public** LLM URLs (e.g. DashScope). Set these on corporate networks when direct internet is blocked. |
+| `LLM_HTTP_READ_TIMEOUT_SECONDS` | `180` | Max seconds to wait for the **model response** after connect (large prompts / Gerrit patches often need more than 60s). |
+| `LLM_HTTP_TIMEOUT_SECONDS` | *(see above)* | Alias for read timeout if `LLM_HTTP_READ_TIMEOUT_SECONDS` is unset. |
+| `LLM_HTTP_CONNECT_TIMEOUT_SECONDS` | `30` | TCP connect timeout for the LLM HTTP call. |
+| `SKILLFLOW_LLM_BACKEND` | `http` | `http` = OpenAI-compatible `POST` ([`CopilotExecutor`](src/executor.py)). `cursor_cli` or `cursor` = subprocess Cursor terminal agent ([`CursorCliExecutor`](src/cursor_cli_executor.py)); **local dev only** — see below. |
+| `CURSOR_CLI_BIN` | *(auto)* | If unset, SkillFlow uses the first on `PATH`: **`agent`**, then `cursor`. The IDE `cursor` launcher often forwards unknown flags to Electron (warnings / hang); the headless CLI is usually **`agent`**. Set `CURSOR_CLI_BIN` if resolution is wrong. |
+| `CURSOR_CLI_SUBCOMMAND` | *(auto)* | After the binary: default is `agent` for `cursor`, and **omitted** for a standalone `agent` executable (`agent --version`). Set to empty to force no subcommand; set to `agent` to force it. |
+| `CURSOR_CLI_WORKDIR` | *(project root)* | Process `cwd` for the subprocess; also passed as `--workspace` in `headless_print` mode ([docs](https://cursor.com/docs/cli/reference/parameters)). |
+| `CURSOR_CLI_PROMPT_MODE` | `headless_print` | Default: official headless flow `agent -p --output-format … --trust --workspace …` plus prompt (or `-` + stdin if prompt exceeds `CURSOR_CLI_MAX_ARGV_PROMPT_BYTES`). Aliases: `print`. Legacy: `stdin_dash`, `argv_tail`, `atfile`, `file_positional`. |
+| `CURSOR_CLI_MODEL` | `composer-2` | Cursor **agent** `--model` id when unset (default `composer-2`). Override (e.g. `auto`, `gpt-5.4-medium`); use `agent --list-models`. **Do not** use DashScope ids like `qwen3.6-plus`. |
+| `CURSOR_CLI_OUTPUT_FORMAT` | `text` | With `-p`: `text`, `json`, or `stream-json` ([headless](https://cursor.com/docs/cli/headless)). |
+| `CURSOR_CLI_NO_TRUST` | *(off)* | If `1` / `true`, omit `--trust` (not recommended for headless; may block on workspace prompts). |
+| `CURSOR_CLI_MAX_ARGV_PROMPT_BYTES` | `28000` | If UTF-8 prompt length exceeds this, SkillFlow uses `-` + stdin instead of a trailing argv string (safer on Windows command-line limits). |
+| `CURSOR_API_KEY` | *(empty)* | Cursor CLI auth ([parameters](https://cursor.com/docs/cli/reference/parameters)); optional `--api-key` is not set by SkillFlow — use env. |
+| `CURSOR_AGENT_EXTRA_ARGS_JSON` | *(empty)* | JSON array of extra argv tokens **after** the subcommand (before `-p` in default mode). |
+| `CURSOR_AGENT_EXTRA_ARGS` | *(empty)* | Extra argv as a single string, parsed with `shlex` (alternative to `…_JSON`). |
+| `CURSOR_CLI_TIMEOUT_SECONDS` | *(derived)* | Subprocess timeout in seconds; default `max(LLM read timeout, 120)`. |
 | `FLASK_ENV` | `production` | Flask environment (set to `development` for debug) |
 | `GITLAB_REPO_URL` | *(empty)* | Same as YAML `gitlab_repo_url`: clone/pull skills from this HTTPS URL. |
 | `GITLAB_BRANCH` | `main` | Same as YAML `gitlab_branch`. |
@@ -125,6 +145,10 @@ You can store non-secret defaults in YAML instead of exporting many environment 
 | `GERRIT_BASE_URL` | *(empty)* | e.g. `https://gerrit.ext.net.nokia.com` when using a **numeric-only** change id in `gerrit_change_id`. |
 | `GERRIT_DEFAULT_PROJECT` | *(empty)* | Optional `project` segment (e.g. `MN/OAM/DOCS/boam`) for numeric-only queries. |
 | `GERRIT_PATCH_MAX_BYTES` | `393216` | Max patch size injected into the LLM prompt (floor `4096`). |
+
+**Alibaba Model Studio (千问, OpenAI-compatible):** Use the regional base from the [official compatibility doc](https://help.aliyun.com/zh/model-studio/compatibility-of-openai-with-dashscope), for example Beijing `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions` or Singapore `https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions`. Set `LLM_MODEL` to `qwen3.6-plus` (or another model id from the console) and put your API key in `DASHSCOPE_API_KEY` or `LLM_API_KEY`. On a **corporate network**, if you see *Cannot connect to LLM service*, configure `HTTPS_PROXY` (and usually `HTTP_PROXY`) to your corporate proxy; SkillFlow no longer forces “no proxy” for public DashScope URLs.
+
+**Cursor CLI backend:** Set `SKILLFLOW_LLM_BACKEND=cursor_cli` to answer prompts via the Cursor **agent** CLI instead of HTTP. By default SkillFlow uses [`-p` / `--print`](https://cursor.com/docs/cli/headless), [`--output-format`](https://cursor.com/docs/cli/reference/parameters), `--trust`, `--workspace`, and **`--model composer-2`** (override with `CURSOR_CLI_MODEL`). `LLM_MODEL` is for HTTP only and is **not** passed to Cursor. SkillFlow does **not** pass `--force` / `--yolo`. Authenticate with `CURSOR_API_KEY` or your normal Cursor login. If you see *passed to Electron/Chromium*, use the **`agent`** CLI on `PATH` or `CURSOR_CLI_BIN=agent`. Chinese docs: [无头模式](https://cursor.com/cn/docs/cli/headless), [参数](https://cursor.com/cn/docs/cli/reference/parameters). If stdout is empty, try legacy `CURSOR_CLI_PROMPT_MODE=stdin_dash` or `file_positional`.
 
 ### Use cases (business scenarios)
 

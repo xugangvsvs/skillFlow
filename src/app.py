@@ -2,17 +2,17 @@ from __future__ import annotations
 
 from flask import Flask, g, jsonify, request, Response, send_from_directory
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple
 try:
     from src.scanner import SkillScanner
-    from src.executor import CopilotExecutor
+    from src.llm_factory import create_llm_executor
     from src.skill_runner import SkillRunner
 except ModuleNotFoundError:
     # Allow running directly as 'python src/app.py' from project root
     import sys, os
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from src.scanner import SkillScanner
-    from src.executor import CopilotExecutor
+    from src.llm_factory import create_llm_executor
     from src.skill_runner import SkillRunner
 import json
 import logging
@@ -132,7 +132,11 @@ def create_app(
         supplement_repo_paths=supplement_paths,
     )
     skills = scanner.scan()
-    executor = CopilotExecutor(api_url=llm_url, model=llm_model)
+    executor = create_llm_executor(
+        project_root=project_root,
+        llm_api_url=llm_url,
+        llm_model=llm_model,
+    )
     skill_runner = SkillRunner(adapter_path=adapter_path)
     use_cases_list, use_cases_by_id = prepare_use_cases(skills, use_case_definitions)
     
@@ -300,6 +304,127 @@ def create_app(
             )
         return sn, user_input, None
 
+    def _err_body_dict(body: Any) -> Dict[str, Any]:
+        if hasattr(body, "get_json"):
+            parsed = body.get_json(silent=True)
+            if isinstance(parsed, dict):
+                return parsed
+        return {"error": "Request failed"}
+
+    def iter_analyze_events() -> Iterator[Tuple[str, ...]]:
+        """Shared analyze pipeline.
+
+        Yields:
+            (\"status\", message: str) — progress for SSE / logs
+            (\"fail\", err_dict: dict, http_status: int)
+            (\"done\", payload: dict) — same shape as ``/api/analyze`` JSON body
+        """
+        (
+            use_case_id,
+            skill_name,
+            user_input,
+            input_params,
+            uploaded_log_text,
+            uploaded_file_name,
+            uploaded_file_bytes,
+            request_error,
+        ) = parse_analyze_request()
+
+        if request_error:
+            yield ("fail", {"error": request_error}, 400)
+            return
+
+        if not (user_input or "").strip():
+            if icfs_may_omit_user_text(use_case_id, input_params):
+                user_input = (
+                    "(No additional free-text instructions; Gerrit patch will be attached below.)"
+                )
+            else:
+                yield ("fail", {"error": "Missing required field: user_input"}, 400)
+                return
+        else:
+            user_input = (user_input or "").strip()
+
+        skill_name, user_input, err_resp = resolve_analyze_target(
+            use_case_id, skill_name, user_input
+        )
+        if err_resp:
+            body, status = err_resp
+            yield ("fail", _err_body_dict(body), status)
+            return
+
+        yield ("status", "Enriching prompt (Gerrit change patch, if configured)…")
+
+        log.info(
+            "analyze: Gerrit/prompt enrichment step starting (use_case_id=%s skill=%s)",
+            use_case_id or "-",
+            skill_name,
+        )
+        user_input, gerrit_warning = maybe_append_gerrit_patch_to_user_input(
+            (use_case_id or "").strip(), user_input, input_params
+        )
+        log.info(
+            "analyze: enrichment done user_input_len=%d gerrit_warning=%s",
+            len(user_input),
+            bool(gerrit_warning),
+        )
+
+        skill = find_skill_by_name(skill_name)
+        if not skill:
+            yield ("fail", {"error": f"Skill '{skill_name}' not found"}, 404)
+            return
+
+        yield ("status", f"Skill loaded: {skill_name}")
+
+        skill_content = skill.get("full_content", "")
+
+        tool_run = skill_runner.run_tool_if_configured(
+            skill_name=skill_name,
+            file_name=uploaded_file_name,
+            file_bytes=uploaded_file_bytes,
+            input_params=input_params,
+        )
+
+        note = (tool_run.get("note") or "").strip()
+        if len(note) > 120:
+            note = note[:117] + "…"
+        tool_msg = f"Tool / adapter phase: {tool_run['mode']}"
+        if note:
+            tool_msg += f" — {note}"
+        yield ("status", tool_msg)
+
+        log.info(
+            "analyze request: use_case_id=%s skill=%s mode=%s file=%s input_params_keys=%s input_len=%d",
+            use_case_id or "-",
+            skill_name,
+            tool_run["mode"],
+            uploaded_file_name or "none",
+            sorted(input_params.keys()) if input_params else [],
+            len(user_input),
+        )
+
+        prompt = build_prompt(
+            skill_content, user_input, tool_run, uploaded_log_text, input_params
+        )
+
+        yield (
+            "status",
+            f"Invoking LLM / Cursor ({len(prompt)} chars; may take several minutes)…",
+        )
+
+        log.info("analyze: calling LLM executor prompt_len=%d", len(prompt))
+        result = executor.ask_ai(prompt)
+        log.info("analyze: LLM returned result_len=%d", len(result or ""))
+
+        payload: Dict[str, Any] = {
+            "result": result,
+            "mode": tool_run["mode"],
+            "execution_note": tool_run["note"],
+        }
+        if gerrit_warning:
+            payload["gerrit_warning"] = gerrit_warning
+        yield ("done", payload)
+
     @app.route("/api/skills", methods=["GET"])
     def get_skills():
         """
@@ -345,157 +470,87 @@ def create_app(
 
         Optional: ``input_params`` (dict), file field ``log_file`` (multipart).
         """
-        (
-            use_case_id,
-            skill_name,
-            user_input,
-            input_params,
-            uploaded_log_text,
-            uploaded_file_name,
-            uploaded_file_bytes,
-            request_error,
-        ) = parse_analyze_request()
+        for evt in iter_analyze_events():
+            kind = evt[0]
+            if kind == "status":
+                log.info("analyze progress: %s", evt[1])
+            elif kind == "fail":
+                return jsonify(evt[1]), evt[2]
+            elif kind == "done":
+                return jsonify(evt[1]), 200
+        return jsonify({"error": "Internal error: analyze pipeline produced no result"}), 500
 
-        if request_error:
-            return jsonify({"error": request_error}), 400
-
-        if not (user_input or "").strip():
-            if icfs_may_omit_user_text(use_case_id, input_params):
-                user_input = (
-                    "(No additional free-text instructions; Gerrit patch will be attached below.)"
-                )
-            else:
-                return jsonify({"error": "Missing required field: user_input"}), 400
-        else:
-            user_input = (user_input or "").strip()
-
-        skill_name, user_input, err_resp = resolve_analyze_target(
-            use_case_id, skill_name, user_input
-        )
-        if err_resp:
-            body, status = err_resp
-            return body, status
-
-        user_input, gerrit_warning = maybe_append_gerrit_patch_to_user_input(
-            (use_case_id or "").strip(), user_input, input_params
-        )
-
-        # Find the skill
-        skill = find_skill_by_name(skill_name)
-        if not skill:
-            return jsonify({"error": f"Skill '{skill_name}' not found"}), 404
-        
-        # Build prompt: combine skill metadata with user input
-        skill_content = skill.get("full_content", "")
-
-        tool_run = skill_runner.run_tool_if_configured(
-            skill_name=skill_name,
-            file_name=uploaded_file_name,
-            file_bytes=uploaded_file_bytes,
-            input_params=input_params,
-        )
-
-        log.info(
-            "analyze request: use_case_id=%s skill=%s mode=%s file=%s input_params_keys=%s input_len=%d",
-            use_case_id or "-",
-            skill_name,
-            tool_run["mode"],
-            uploaded_file_name or "none",
-            sorted(input_params.keys()) if input_params else [],
-            len(user_input),
-        )
-
-        prompt = build_prompt(skill_content, user_input, tool_run, uploaded_log_text, input_params)
-
-        # Call LLM executor
-        result = executor.ask_ai(prompt)
-
-        payload: Dict[str, Any] = {
-            "result": result,
-            "mode": tool_run["mode"],
-            "execution_note": tool_run["note"],
-        }
-        if gerrit_warning:
-            payload["gerrit_warning"] = gerrit_warning
-        return jsonify(payload), 200
-    
     @app.route("/api/analyze/stream", methods=["POST"])
     def analyze_stream():
         """
-        Endpoint to analyze user input with Server-Sent Events (SSE).
+        Analyze with Server-Sent Events (SSE).
 
-        The LLM result is returned as a **single** ``data:`` event after the model
-        completes (not token-by-token streaming). See README for details.
-        
-        Same payload rules as ``/api/analyze`` (``skill_name`` or ``use_case_id`` with ``user_input``).
+        Emits ``type: status`` lines during the pipeline, then ``type: complete``
+        with the same fields as ``/api/analyze`` (``result``, ``mode``,
+        ``execution_note``, optional ``gerrit_warning``). The LLM answer is still
+        one block after the model finishes (not token streaming).
 
-        Returns:
-            Streamed response chunks as SSE.
+        If the request fails before streaming starts (validation, unknown skill at
+        resolve time, etc.), returns normal JSON with the same status codes as
+        ``/api/analyze``. Mid-pipeline failures after the first SSE line use
+        ``type: error`` on the stream.
         """
-        (
-            use_case_id,
-            skill_name,
-            user_input,
-            input_params,
-            uploaded_log_text,
-            uploaded_file_name,
-            uploaded_file_bytes,
-            request_error,
-        ) = parse_analyze_request()
+        pipeline = iter_analyze_events()
+        first = next(pipeline, None)
+        if first is None:
+            return jsonify({"error": "Internal error: empty analyze pipeline"}), 500
+        if first[0] == "fail":
+            return jsonify(first[1]), first[2]
 
-        if request_error:
-            return jsonify({"error": request_error}), 400
+        def generate() -> Iterator[str]:
+            evt: Tuple[Any, ...] = first
+            while True:
+                kind = evt[0]
+                if kind == "status":
+                    yield (
+                        "data: "
+                        + json.dumps({"type": "status", "message": evt[1]})
+                        + "\n\n"
+                    )
+                elif kind == "fail":
+                    err_obj: Dict[str, Any] = {"type": "error", "error": "Request failed"}
+                    if isinstance(evt[1], dict) and evt[1].get("error"):
+                        err_obj["error"] = evt[1]["error"]
+                    err_obj["http_status"] = evt[2]
+                    yield "data: " + json.dumps(err_obj) + "\n\n"
+                    return
+                elif kind == "done":
+                    p: Dict[str, Any] = evt[1]
+                    complete: Dict[str, Any] = {
+                        "type": "complete",
+                        "result": p["result"],
+                        "mode": p["mode"],
+                        "execution_note": p["execution_note"],
+                    }
+                    if "gerrit_warning" in p:
+                        complete["gerrit_warning"] = p["gerrit_warning"]
+                    yield "data: " + json.dumps(complete) + "\n\n"
+                    return
+                else:
+                    log.error("analyze_stream: unknown pipeline event %r", evt)
+                    yield (
+                        "data: "
+                        + json.dumps(
+                            {"type": "error", "error": "Internal pipeline error"}
+                        )
+                        + "\n\n"
+                    )
+                    return
+                try:
+                    evt = next(pipeline)
+                except StopIteration:
+                    return
 
-        if not (user_input or "").strip():
-            if icfs_may_omit_user_text(use_case_id, input_params):
-                user_input = (
-                    "(No additional free-text instructions; Gerrit patch will be attached below.)"
-                )
-            else:
-                return jsonify({"error": "Missing required field: user_input"}), 400
-        else:
-            user_input = (user_input or "").strip()
-
-        skill_name, user_input, err_resp = resolve_analyze_target(
-            use_case_id, skill_name, user_input
-        )
-        if err_resp:
-            body, status = err_resp
-            return body, status
-
-        user_input, gerrit_warning = maybe_append_gerrit_patch_to_user_input(
-            (use_case_id or "").strip(), user_input, input_params
-        )
-
-        skill = find_skill_by_name(skill_name)
-        if not skill:
-            return jsonify({"error": f"Skill '{skill_name}' not found"}), 404
-
-        # Build prompt
-        skill_content = skill.get("full_content", "")
-
-        tool_run = skill_runner.run_tool_if_configured(
-            skill_name=skill_name,
-            file_name=uploaded_file_name,
-            file_bytes=uploaded_file_bytes,
-            input_params=input_params,
-        )
-
-        prompt = build_prompt(skill_content, user_input, tool_run, uploaded_log_text, input_params)
-        
-        # Call LLM executor
-        # Note: For now, we'll return the full result in chunks
-        # Future: implement true streaming from the LLM API
-        result = executor.ask_ai(prompt)
-        
-        def generate():
-            """Generator function for SSE."""
-            payload: Dict[str, Any] = {"chunk": result}
-            if gerrit_warning:
-                payload["gerrit_warning"] = gerrit_warning
-            yield f"data: {json.dumps(payload)}\n\n"
-        
-        return Response(generate(), mimetype="text/event-stream"), 200
+        return Response(
+            generate(),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache"},
+        ), 200
     
     return app
 
