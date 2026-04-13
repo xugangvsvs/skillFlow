@@ -1,6 +1,9 @@
 import pytest
 from src.executor import CopilotExecutor, llm_request_timeout
 
+# Explicit intranet-style URL so tests do not depend on CI/host LLM_API_URL.
+_TEST_INTRANET_LLM_URL = "http://hzllmapi.dyn.nesc.nokia.net:8080/v1/chat/completions"
+
 
 def _mock_response(mocker, content="AI: Suggested fix for log error.", status_code=200):
     mock_resp = mocker.MagicMock()
@@ -16,7 +19,7 @@ def test_executor_returns_ai_content(mocker):
     """Happy path: return choices[0].message.content."""
     mock_post = mocker.patch("requests.post", return_value=_mock_response(mocker))
 
-    exe = CopilotExecutor()
+    exe = CopilotExecutor(api_url=_TEST_INTRANET_LLM_URL)
     response = exe.ask_ai("Explain error")
 
     assert response == "AI: Suggested fix for log error."
