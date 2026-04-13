@@ -195,9 +195,11 @@ def test_resolve_cursor_cli_executable_falls_back_to_cursor_when_agent_missing(
 
 
 def test_standalone_agent_cli_omits_subcommand(mocker, monkeypatch, tmp_path):
+    # Path basename must be ``agent`` so ``Path(...).stem == "agent"`` on Linux CI and Windows.
+    fake_agent = "/tmp/skillflow-test-bin/agent"
     mocker.patch(
         "src.cursor_cli_executor._resolve_cursor_cli_executable",
-        return_value=r"C:\fake\agent.exe",
+        return_value=fake_agent,
     )
     monkeypatch.setenv("CURSOR_CLI_PROMPT_MODE", "stdin_dash")
     monkeypatch.delenv("CURSOR_CLI_SUBCOMMAND", raising=False)
@@ -206,7 +208,7 @@ def test_standalone_agent_cli_omits_subcommand(mocker, monkeypatch, tmp_path):
         return_value=MagicMock(returncode=0, stdout="ok", stderr=""),
     )
     CursorCliExecutor(project_root=tmp_path).ask_ai("p")
-    assert mock_run.call_args[0][0] == [r"C:\fake\agent.exe", "-"]
+    assert mock_run.call_args[0][0] == [fake_agent, "-"]
 
 
 def test_headless_print_default_uses_p_and_workspace(mocker, monkeypatch, tmp_path):
